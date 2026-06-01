@@ -362,18 +362,29 @@ goldfish chat --no-llm --once "/doctor"
 scripts/goldfish/skills/
 ```
 
-褰撳墠鍐呯疆鎶€鑳斤細
+Built-in information-retrieval skills:
 
-- `source-curation`锛氫俊鎭簮缁存姢銆佹浛鎹€佷紭鍏堢骇鍒ゆ柇銆?
-- `trend-analysis`锛氫粠澶氭潯鎯呮姤涓彁鐐艰秼鍔裤€?
-- `draft-writing`锛氭妸鎯呮姤杞垚瀹夊叏鍙鏍歌崏绋裤€?
-- `business-idea`锛氫粠鏂伴椈鎻愮偧鐩爣鐢ㄦ埛銆佺棝鐐广€丮VP銆佹敹璐规柟寮忓拰楠岃瘉鏂规硶銆?
-- `weekly-review`锛氬懆鎶ュ鐩樺拰涓嬪懆鍏虫敞鏂瑰悜銆?
+- `retrieval-planning`: turn a vague research goal into a bounded tool plan.
+- `query-expansion`: generate broad, narrow, source-specific, and local-search queries.
+- `web-research`: collect public web evidence without login, cookies, or anti-scraping bypass.
+- `source-evaluation`: judge source reliability, priority, freshness, and failure risk.
+- `evidence-capture`: preserve claim-level evidence records with URLs and confidence.
+- `fact-checking`: mark claims as verified, uncertain, unsupported, or out of scope.
+- `answer-synthesis`: turn retrieved evidence into a concise source-backed answer.
+- `knowledge-routing`: decide whether findings become permanent notes, prompts, project ideas, business ideas, reports, or Inbox items.
+- `retrieval-review`: review retrieval quality and recommend follow-up searches or source changes.
+- `source-curation`: maintain source lists and priorities.
+- `trend-analysis`: turn repeated signals into trend judgments.
+- `draft-writing`: write safe knowledge drafts from intelligence items.
+- `business-idea`: extract users, pain points, MVPs, pricing, and validation steps.
+- `weekly-review`: review the week and pick next focus areas.
 
 鏌ョ湅鎶€鑳斤細
 
 ```bash
 goldfish skills
+goldfish skills retrieval-planning
+goldfish skills web-research
 goldfish skills business-idea
 ```
 
