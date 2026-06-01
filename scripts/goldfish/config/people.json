@@ -1,0 +1,540 @@
+{
+  "people": [
+    {
+      "name": "Andrej Karpathy",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["AI coding", "LLM", "education", "agent"],
+      "reason": "AI 教育、LLM 产品与开发者工具方向影响力强。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "github",
+          "name": "GitHub activity",
+          "url": "https://github.com/karpathy",
+          "rss_url": "https://github.com/karpathy.atom",
+          "handle": "karpathy",
+          "notes": "仅追踪公开专业项目动态。"
+        },
+        {
+          "type": "x_manual",
+          "name": "X manual",
+          "url": "https://x.com/karpathy",
+          "rss_url": "",
+          "handle": "karpathy",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Andrew Ng",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["AI education", "agent", "startup", "applied AI"],
+      "reason": "AI 教育、创业和应用落地观点稳定产出。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "newsletter",
+          "name": "The Batch",
+          "url": "https://www.deeplearning.ai/the-batch/",
+          "rss_url": "https://www.deeplearning.ai/the-batch/feed/",
+          "handle": "",
+          "notes": "公开新闻通讯。"
+        }
+      ]
+    },
+    {
+      "name": "Simon Willison",
+      "category": "high",
+      "priority": 5,
+      "region": "UK",
+      "language": "en",
+      "topics": ["LLM app", "RAG", "AI coding", "developer tools"],
+      "reason": "LLM 应用开发和工程实践高质量来源。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "rss",
+          "name": "Simon Willison blog",
+          "url": "https://simonwillison.net/",
+          "rss_url": "https://simonwillison.net/atom/everything/",
+          "handle": "simonw",
+          "notes": "公开专业博客。"
+        }
+      ]
+    },
+    {
+      "name": "Sam Altman",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["OpenAI", "model", "product", "startup"],
+      "reason": "OpenAI 方向和 AI 产品商业化关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "blog",
+          "name": "Sam Altman blog",
+          "url": "https://blog.samaltman.com/",
+          "rss_url": "https://blog.samaltman.com/posts.atom",
+          "handle": "sama",
+          "notes": "公开专业博客；X 待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Dario Amodei",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["Anthropic", "AI safety", "model", "enterprise"],
+      "reason": "Anthropic 战略、模型和安全方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "Anthropic Newsroom",
+          "url": "https://www.anthropic.com/news",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Demis Hassabis",
+      "category": "high",
+      "priority": 5,
+      "region": "UK",
+      "language": "en",
+      "topics": ["DeepMind", "research", "model", "science"],
+      "reason": "DeepMind 研究和 AI for Science 关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "Google DeepMind Blog",
+          "url": "https://deepmind.google/discover/blog/",
+          "rss_url": "https://deepmind.google/discover/blog/rss.xml",
+          "handle": "",
+          "notes": "公开公司博客。"
+        }
+      ]
+    },
+    {
+      "name": "Clem Delangue",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["open source model", "Hugging Face", "community"],
+      "reason": "开源模型生态和社区方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "github",
+          "name": "GitHub activity",
+          "url": "https://github.com/ClementDelangue",
+          "rss_url": "https://github.com/ClementDelangue.atom",
+          "handle": "ClementDelangue",
+          "notes": "仅追踪公开专业项目动态。"
+        },
+        {
+          "type": "company_news",
+          "name": "Hugging Face Blog",
+          "url": "https://huggingface.co/blog",
+          "rss_url": "https://huggingface.co/blog/feed.xml",
+          "handle": "",
+          "notes": "公开公司博客。"
+        }
+      ]
+    },
+    {
+      "name": "Harrison Chase",
+      "category": "high",
+      "priority": 5,
+      "region": "US",
+      "language": "en",
+      "topics": ["agent", "LangChain", "RAG", "LLM app"],
+      "reason": "Agent、RAG 和 LLM 应用框架方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "LangChain Blog",
+          "url": "https://blog.langchain.com/",
+          "rss_url": "https://blog.langchain.com/rss/",
+          "handle": "",
+          "notes": "公开公司博客。"
+        }
+      ]
+    },
+    {
+      "name": "Greg Brockman",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["OpenAI", "engineering", "product"],
+      "reason": "OpenAI 工程和产品方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "github",
+          "name": "GitHub activity",
+          "url": "https://github.com/gdb",
+          "rss_url": "https://github.com/gdb.atom",
+          "handle": "gdb",
+          "notes": "仅追踪公开专业项目动态。"
+        }
+      ]
+    },
+    {
+      "name": "Ilya Sutskever",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["model", "research", "AI safety"],
+      "reason": "深度学习和 AI 安全方向影响力强。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "x_manual",
+          "name": "X manual",
+          "url": "https://x.com/ilyasut",
+          "rss_url": "",
+          "handle": "ilyasut",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Mira Murati",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["product", "model", "startup"],
+      "reason": "AI 产品和模型落地方向值得观察。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "x_manual",
+          "name": "X manual",
+          "url": "https://x.com/miramurati",
+          "rss_url": "",
+          "handle": "miramurati",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Jensen Huang",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["NVIDIA", "inference", "GPU", "enterprise"],
+      "reason": "AI 基础设施和商业化方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "NVIDIA Blog",
+          "url": "https://blogs.nvidia.com/",
+          "rss_url": "https://blogs.nvidia.com/feed/",
+          "handle": "",
+          "notes": "公开公司博客，需关键词过滤。"
+        }
+      ]
+    },
+    {
+      "name": "Yann LeCun",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["research", "open source model", "Meta AI"],
+      "reason": "AI 研究和开源模型观点影响力强。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "Meta AI Blog",
+          "url": "https://ai.meta.com/blog/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Geoffrey Hinton",
+      "category": "medium",
+      "priority": 4,
+      "region": "CA",
+      "language": "en",
+      "topics": ["research", "AI safety", "deep learning"],
+      "reason": "深度学习和 AI 风险讨论的重要公共来源。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "x_manual",
+          "name": "Manual public source",
+          "url": "https://www.cs.toronto.edu/~hinton/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Yoshua Bengio",
+      "category": "medium",
+      "priority": 4,
+      "region": "CA",
+      "language": "en",
+      "topics": ["research", "AI safety", "deep learning"],
+      "reason": "深度学习和 AI 安全公共观点的重要来源。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "blog",
+          "name": "Mila news",
+          "url": "https://mila.quebec/en/news/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Fei-Fei Li",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["computer vision", "AI education", "research"],
+      "reason": "AI 研究、教育和产业化方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "Stanford HAI News",
+          "url": "https://hai.stanford.edu/news",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Jerry Liu",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["RAG", "LlamaIndex", "knowledge base", "agent"],
+      "reason": "RAG、知识库和 Agent 工程方向高相关。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "LlamaIndex Blog",
+          "url": "https://www.llamaindex.ai/blog",
+          "rss_url": "https://www.llamaindex.ai/blog/rss.xml",
+          "handle": "",
+          "notes": "公开公司博客。"
+        }
+      ]
+    },
+    {
+      "name": "swyx",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["AI engineering", "agent", "developer tools"],
+      "reason": "AI Engineer 生态和开发者工具方向重要来源。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "blog",
+          "name": "swyx blog",
+          "url": "https://www.swyx.io/",
+          "rss_url": "https://www.swyx.io/rss.xml",
+          "handle": "swyx",
+          "notes": "公开专业博客。"
+        }
+      ]
+    },
+    {
+      "name": "Logan Kilpatrick",
+      "category": "medium",
+      "priority": 4,
+      "region": "US",
+      "language": "en",
+      "topics": ["developer relations", "AI coding", "developer tools"],
+      "reason": "开发者生态和工具方向值得关注。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "x_manual",
+          "name": "X manual",
+          "url": "https://x.com/OfficialLoganK",
+          "rss_url": "",
+          "handle": "OfficialLoganK",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "Jeremy Howard",
+      "category": "medium",
+      "priority": 4,
+      "region": "AU",
+      "language": "en",
+      "topics": ["AI education", "open source", "applied AI"],
+      "reason": "实用 AI、开源和教育方向高价值来源。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "blog",
+          "name": "fast.ai blog",
+          "url": "https://www.fast.ai/",
+          "rss_url": "https://www.fast.ai/index.xml",
+          "handle": "",
+          "notes": "公开专业博客。"
+        }
+      ]
+    },
+    {
+      "name": "李开复",
+      "category": "china_product",
+      "priority": 4,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["AI startup", "AI product", "China AI"],
+      "reason": "中国 AI 创业和产品方向关键观察对象。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "零一万物",
+          "url": "https://www.lingyiwanwu.com/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "王小川",
+      "category": "china_product",
+      "priority": 4,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["AI product", "China AI", "model"],
+      "reason": "中国大模型产品和创业方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "百川智能",
+          "url": "https://www.baichuan-ai.com/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "周鸿祎",
+      "category": "china_product",
+      "priority": 3,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["AI product", "security", "enterprise"],
+      "reason": "AI 产品商业化和企业市场方向可观察。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "360 AI",
+          "url": "https://ai.360.com/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "杨植麟",
+      "category": "china_product",
+      "priority": 4,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["model", "AI product", "startup"],
+      "reason": "月之暗面和中国 AI 产品方向关键人物。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "Moonshot AI",
+          "url": "https://www.moonshot.cn/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "李彦宏",
+      "category": "china_product",
+      "priority": 3,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["Baidu AI", "AI product", "enterprise"],
+      "reason": "百度 AI 产品、搜索和企业落地方向可观察。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "百度 AI",
+          "url": "https://ai.baidu.com/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    },
+    {
+      "name": "张鹏",
+      "category": "china_product",
+      "priority": 3,
+      "region": "CN",
+      "language": "zh",
+      "topics": ["AI product", "Zhipu AI", "China AI"],
+      "reason": "智谱 AI 产品和中国大模型应用方向可观察。",
+      "enabled": true,
+      "sources": [
+        {
+          "type": "company_news",
+          "name": "智谱 AI",
+          "url": "https://www.zhipuai.cn/",
+          "rss_url": "",
+          "handle": "",
+          "notes": "待人工查看。"
+        }
+      ]
+    }
+  ]
+}

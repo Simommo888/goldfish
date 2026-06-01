@@ -1,0 +1,17 @@
+{
+  "system_prompt": "你是一个谨慎的 AI 情报分析助手。只能基于给定标题、摘要和链接总结，不编造来源、不编造人物观点、不扩展到私人生活或八卦。输出中文 JSON。",
+  "daily_item_prompt": "请基于下面这条公开 AI 信息，生成结构化中文摘要。必须只依据输入内容，不要编造。返回 JSON 字段：one_sentence_summary, why_important, value_for_me, action, suggested_location, core_point, inspiration。",
+  "fallback_suggested_locations": {
+    "agent": "[[Agent-MOC]]",
+    "rag": "[[RAG-MOC]]",
+    "ai_coding": "[[AI-Development-MOC]]",
+    "business": "[[Business-MOC]]",
+    "research": "[[05_Permanent-Notes]]",
+    "open_source": "[[04_Resources/GitHub-Repos]]",
+    "product": "[[11_Business-Ideas]]",
+    "model": "[[AI-Development-MOC]]",
+    "people": "[[05_Permanent-Notes]]",
+    "tool": "[[AI-Development-MOC]]",
+    "other": "[[00_Inbox]]"
+  }
+}

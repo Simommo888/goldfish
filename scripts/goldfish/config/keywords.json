@@ -1,0 +1,145 @@
+{
+  "high_priority_keywords": [
+    "Agent",
+    "AI agent",
+    "RAG",
+    "retrieval",
+    "knowledge base",
+    "AI coding",
+    "coding agent",
+    "Codex",
+    "Claude Code",
+    "MCP",
+    "LLM app",
+    "open source model",
+    "embedding",
+    "vector database",
+    "developer tools",
+    "product launch",
+    "new model",
+    "benchmark",
+    "startup",
+    "workflow automation"
+  ],
+  "medium_priority_keywords": [
+    "prompt engineering",
+    "fine-tuning",
+    "multimodal",
+    "voice AI",
+    "image generation",
+    "video generation",
+    "dataset",
+    "eval",
+    "inference",
+    "local AI"
+  ],
+  "business_keywords": [
+    "pricing",
+    "enterprise",
+    "SaaS",
+    "customer support",
+    "education",
+    "workflow",
+    "automation",
+    "monetization",
+    "go to market",
+    "private deployment"
+  ],
+  "negative_keywords": [
+    "gossip",
+    "rumor",
+    "drama",
+    "private life",
+    "fan war",
+    "celebrity gossip",
+    "unrelated",
+    "no source"
+  ],
+  "category_keywords": {
+    "model": [
+      "model",
+      "new model",
+      "foundation model",
+      "multimodal",
+      "benchmark",
+      "inference"
+    ],
+    "product": [
+      "product",
+      "launch",
+      "release",
+      "pricing",
+      "app",
+      "SaaS"
+    ],
+    "agent": [
+      "agent",
+      "tool use",
+      "workflow automation",
+      "autonomous",
+      "multi-agent"
+    ],
+    "rag": [
+      "RAG",
+      "retrieval",
+      "embedding",
+      "vector database",
+      "knowledge base"
+    ],
+    "ai_coding": [
+      "AI coding",
+      "coding agent",
+      "Codex",
+      "Claude Code",
+      "developer tools",
+      "IDE"
+    ],
+    "research": [
+      "paper",
+      "arXiv",
+      "research",
+      "dataset",
+      "eval"
+    ],
+    "open_source": [
+      "GitHub",
+      "open source",
+      "repo",
+      "library",
+      "framework"
+    ],
+    "business": [
+      "startup",
+      "enterprise",
+      "monetization",
+      "customer",
+      "go to market"
+    ],
+    "people": [
+      "interview",
+      "talk",
+      "keynote",
+      "opinion",
+      "thread"
+    ],
+    "tool": [
+      "tool",
+      "plugin",
+      "MCP",
+      "SDK",
+      "API"
+    ],
+    "other": []
+  },
+  "focus_directions": [
+    "Agent",
+    "RAG",
+    "AI Coding",
+    "Codex",
+    "Claude Code",
+    "MCP",
+    "Knowledge Base",
+    "AI 应用开发",
+    "技术变现"
+  ]
+}

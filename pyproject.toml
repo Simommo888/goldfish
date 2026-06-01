@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goldfish"
+version = "0.1.0"
+description = "Goldfish AI intelligence and knowledge deposition agent"
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "feedparser",
+  "openai",
+  "rich",
+  "Pillow"
+]
+
+[project.scripts]
+goldfish = "cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "scripts/goldfish"}
+py-modules = ["cli", "goldfish"]
+packages = ["modules", "modules.providers", "modules.pixel_sprites"]
+
+[tool.setuptools.package-data]
+modules = ["assets/startup/*.png"]

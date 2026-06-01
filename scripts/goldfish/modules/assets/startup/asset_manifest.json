@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "theme": "goldfish dark pixel terminal",
+  "background": "#02070a",
+  "hero_canvas_size": [
+    660,
+    200
+  ],
+  "hero_layers": [
+    {
+      "name": "hero_bubbles_left.png",
+      "x": 42,
+      "y": 14
+    },
+    {
+      "name": "hero_plant_left.png",
+      "x": 46,
+      "y": 112
+    },
+    {
+      "name": "hero_plant_right.png",
+      "x": 552,
+      "y": 98
+    },
+    {
+      "name": "hero_aquarium_floor.png",
+      "x": 86,
+      "y": 154
+    },
+    {
+      "name": "hero_goldfish.png",
+      "x": 162,
+      "y": 34
+    }
+  ],
+  "tips_assets": [
+    {
+      "name": "tips_scene.png",
+      "role": "tips footer scene"
+    }
+  ],
+  "icons": [
+    "icon_bulb.png",
+    "icon_clock.png",
+    "icon_code.png",
+    "icon_document.png",
+    "icon_file_read.png",
+    "icon_file_write.png",
+    "icon_folder.png",
+    "icon_memory.png",
+    "icon_memory_save.png",
+    "icon_model.png",
+    "icon_rocket.png",
+    "icon_shell.png",
+    "icon_status_wave.png",
+    "icon_web_search.png",
+    "icon_wrench.png"
+  ],
+  "rendering": "compose transparent PNG layers at runtime, then render with ANSI truecolor half-blocks"
+}

@@ -1,0 +1,346 @@
+import json
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+
+AGENT_DIR = Path(__file__).resolve().parents[1]
+ROOT = AGENT_DIR.parents[1]
+sys.path.insert(0, str(AGENT_DIR))
+
+from modules.classifier import classify_item
+from modules.agent_memory import load_memory
+from modules.agent_loop import make_plan, run_agent_loop
+from modules.command_router import CommandRouter
+from modules.config_loader import load_config
+from modules.insight_extractor import extract_insights
+from modules.model_setup import configure_environment, find_profile, redact_secret_text
+from modules.providers.registry import resolve_llm_connection
+from modules.report_generator import generate_daily_report
+from modules.search_engine import search_goldfish
+from modules.scorer import score_item
+from modules.skill_loader import list_skills, load_skill
+from modules.source_health import build_source_health_records
+from modules.state_store import GoldfishState
+from modules.web_researcher import generate_research_markdown, rule_based_synthesis
+
+
+class TestDailyAiNewsAgentBasic(unittest.TestCase):
+    def test_config_files_can_load(self):
+        config = load_config(AGENT_DIR / "config")
+        self.assertIn("official", config.sources)
+        self.assertIn("high_priority_keywords", config.keywords)
+        self.assertTrue(config.people.get("people"))
+        self.assertIn("mission", config.agent_profile)
+
+    def test_json_files_are_valid(self):
+        for path in (AGENT_DIR / "config").glob("*.json"):
+            with self.subTest(path=path.name):
+                json.loads(path.read_text(encoding="utf-8"))
+
+    def test_scorer_scores_example(self):
+        config = load_config(AGENT_DIR / "config")
+        item = {
+            "title": "New AI coding agent with MCP and RAG support",
+            "summary": "A developer tools product launch for knowledge base workflows.",
+            "source_priority": 5,
+        }
+        scored = score_item(item, config.keywords)
+        self.assertGreater(scored["score"], 5)
+        self.assertTrue(scored["score_reasons"])
+
+    def test_classifier_classifies_example(self):
+        config = load_config(AGENT_DIR / "config")
+        item = {"title": "Agent workflow automation with tool use", "summary": ""}
+        self.assertEqual(classify_item(item, config.keywords), "agent")
+
+    def test_report_generator_outputs_markdown(self):
+        item = {
+            "title": "Example AI news",
+            "source_name": "Example",
+            "category": "agent",
+            "url": "https://example.com",
+            "published": "2026-05-26",
+            "one_sentence_summary": "Example summary.",
+            "why_important": "Important.",
+            "value_for_me": "Useful.",
+            "action": "Read.",
+            "suggested_location": "[[Agent-MOC]]",
+            "score": 8,
+            "score_reasons": ["test"],
+        }
+        markdown = generate_daily_report("2026-05-26", [item], [])
+        self.assertIn("# AI 情报日报 - 2026-05-26", markdown)
+        self.assertIn("Example AI news", markdown)
+
+    def test_insight_extractor_outputs_suggestion(self):
+        memory = load_memory(ROOT)
+        item = {
+            "title": "Agent workflow automation product launch",
+            "summary": "A new Agent tool for AI application developers.",
+            "one_sentence_summary": "A new Agent tool was launched.",
+            "why_important": "It may improve AI app development workflows.",
+            "value_for_me": "Can become a project idea.",
+            "action": "Study the workflow.",
+            "category": "agent",
+            "source_name": "Example",
+            "url": "https://example.com",
+            "score": 9,
+        }
+        insights = extract_insights([item], memory, limit=3, min_score=5)
+        self.assertEqual(len(insights), 1)
+        self.assertEqual(insights[0]["target_type"], "project_idea")
+
+    def test_provider_registry_resolves_deepseek_default(self):
+        connection = resolve_llm_connection(
+            {
+                "llm_provider": "deepseek",
+                "llm_model": "deepseek-v4-pro",
+                "llm_base_url": "https://api.deepseek.com",
+            }
+        )
+        self.assertEqual(connection["provider"], "deepseek")
+        self.assertEqual(connection["model"], "deepseek-v4-pro")
+        self.assertEqual(connection["base_url"], "https://api.deepseek.com")
+
+    def test_model_setup_helpers_do_not_require_files(self):
+        profile = find_profile("deepseek-v4-pro")
+        configured = configure_environment(profile, "sk-test-do-not-use-123456", persist_user=False)
+        self.assertEqual(configured["provider"], "deepseek")
+        self.assertEqual(configured["model"], "deepseek-v4-pro")
+        self.assertIn("***REDACTED***", redact_secret_text("api_key=sk-test-do-not-use-123456"))
+
+    def test_command_router_routes_search(self):
+        routed = CommandRouter().route('/search MCP --limit 3', {"no_llm": True})
+        self.assertEqual(routed.tool_name, "search")
+        self.assertIn("MCP", routed.args["query"])
+        self.assertEqual(routed.args["limit"], 3)
+
+    def test_command_router_routes_research(self):
+        routed = CommandRouter().route('/research MCP servers --limit 3 --no-llm', {"no_llm": True})
+        self.assertEqual(routed.tool_name, "research_web")
+        self.assertIn("MCP servers", routed.args["query"])
+        self.assertEqual(routed.args["limit"], 3)
+        self.assertTrue(routed.args["no_llm"])
+
+    def test_command_router_routes_agent(self):
+        routed = CommandRouter().route('/agent research MCP business opportunities --max-steps 3 --no-llm', {"no_llm": True})
+        self.assertEqual(routed.tool_name, "agent")
+        self.assertIn("MCP business opportunities", routed.args["goal"])
+        self.assertEqual(routed.args["max_steps"], 3)
+        self.assertTrue(routed.args["no_llm"])
+
+    def test_agent_loop_plans_research_goal(self):
+        plan = make_plan("research MCP server commercial opportunities", max_steps=3, no_save=True)
+        self.assertEqual(plan[0].tool, "research_web")
+        self.assertEqual(plan[0].status, "search")
+        self.assertTrue(plan[0].args["no_save"])
+
+    def test_agent_loop_runs_with_fake_registry_and_workspace(self):
+        class FakeRegistry:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, name, args=None):
+                self.calls.append((name, args or {}))
+                if name == "research_web":
+                    return {
+                        "status": "ok",
+                        "research": {
+                            "query": (args or {}).get("query", ""),
+                            "results_count": 1,
+                            "pages_count": 0,
+                            "report_path": "",
+                        },
+                    }
+                if name == "memory_show":
+                    return {"status": "ok", "memory": {}}
+                return {"status": "ok"}
+
+        result = run_agent_loop(
+            "research MCP commercial opportunities",
+            registry=FakeRegistry(),
+            max_steps=2,
+            no_llm=True,
+            no_save=True,
+            root=ROOT,
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(Path(result["task_path"]).exists())
+        self.assertTrue((Path(result["task_path"]) / "goal.md").exists())
+        self.assertTrue((Path(result["task_path"]) / "observations.json").exists())
+        self.assertEqual(result["observations"][0]["tool"], "research_web")
+
+    def test_skills_can_load(self):
+        skills = list_skills()
+        names = {skill["name"] for skill in skills}
+        self.assertIn("business-idea", names)
+        business = load_skill("business-idea")
+        self.assertIn("Target user", business["content"])
+
+    def test_source_health_records(self):
+        sources = [{"name": "Example", "enabled": True}]
+        items = [
+            {
+                "source_name": "Example",
+                "title": "MCP agent launch",
+                "score": 8,
+                "needs_manual_review": False,
+            }
+        ]
+        records = build_source_health_records(sources, items)
+        self.assertEqual(records[0]["status"], "success")
+        self.assertGreater(records[0]["quality_score"], 0)
+
+    def test_command_router_routes_dry_run(self):
+        routed = CommandRouter().route("dry-run", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "dry_run")
+        self.assertTrue(routed.args["no_llm"])
+
+    def test_dry_run_command(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "goldfish.py"),
+            "--dry-run",
+            "--no-llm",
+            "--verbose",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"dry_run": true', result.stdout)
+        self.assertIn('"insights"', result.stdout)
+
+    def test_cli_config_check(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "config",
+            "check",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("goldfish", result.stdout)
+
+    def test_cli_dry_run(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "dry-run",
+            "--no-llm",
+            "--verbose",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"dry_run": true', result.stdout)
+
+    def test_cli_chat_once(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "chat",
+            "--no-llm",
+            "--once",
+            "/config",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("sources_categories", result.stdout)
+
+    def test_chat_model_points_to_setup(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "chat",
+            "--no-llm",
+            "--once",
+            "/model",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("goldfish setup", result.stdout)
+
+    def test_setup_model_list(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "setup",
+            "--once",
+            "/model list",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("DeepSeek", result.stdout)
+
+    def test_cli_chat_starts_legacy_chat(self):
+        command = [sys.executable, str(AGENT_DIR / "cli.py"), "chat"]
+        result = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            input="exit\n",
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("goldfish", result.stdout)
+        self.assertNotIn("small agent, sharp memory", result.stdout)
+        self.assertIn("v0.1.0", result.stdout)
+        self.assertIn("session closed", result.stdout)
+
+    def test_cli_tools_and_history(self):
+        tools_command = [sys.executable, str(AGENT_DIR / "cli.py"), "tools"]
+        tools = subprocess.run(tools_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(tools.returncode, 0, msg=tools.stdout + tools.stderr)
+        self.assertIn("run_daily", tools.stdout)
+
+        history_command = [sys.executable, str(AGENT_DIR / "cli.py"), "history", "--limit", "3"]
+        history = subprocess.run(history_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(history.returncode, 0, msg=history.stdout + history.stderr)
+        self.assertIn("state_db", history.stdout)
+
+    def test_cli_search_and_skills(self):
+        search_command = [sys.executable, str(AGENT_DIR / "cli.py"), "search", "MCP", "--limit", "3"]
+        search = subprocess.run(search_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(search.returncode, 0, msg=search.stdout + search.stderr)
+        self.assertIn('"query": "MCP"', search.stdout)
+
+        skills_command = [sys.executable, str(AGENT_DIR / "cli.py"), "skills"]
+        skills = subprocess.run(skills_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(skills.returncode, 0, msg=skills.stdout + skills.stderr)
+        self.assertIn("business-idea", skills.stdout)
+
+        source_command = [sys.executable, str(AGENT_DIR / "cli.py"), "sources", "health", "--limit", "3"]
+        source_health = subprocess.run(source_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(source_health.returncode, 0, msg=source_health.stdout + source_health.stderr)
+        self.assertIn("source_health", source_health.stdout)
+
+    def test_cli_agent_command_runs_without_llm(self):
+        command = [sys.executable, str(AGENT_DIR / "cli.py"), "agent", "show tools", "--no-llm", "--max-steps", "1", "--no-save"]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"agent"', result.stdout)
+        self.assertIn('"task_id"', result.stdout)
+
+    def test_search_engine_returns_shape(self):
+        result = search_goldfish("MCP", limit=3, root=ROOT)
+        self.assertIn("query", result)
+        self.assertIn("results", result)
+
+    def test_web_research_markdown_shape(self):
+        results = [{"title": "Example", "url": "https://example.com", "snippet": "Snippet"}]
+        pages = [{**results[0], "content": "Content about MCP.", "fetch_status": "success", "error": ""}]
+        synthesis = rule_based_synthesis("MCP", results, pages)
+        markdown = generate_research_markdown("MCP", results, pages, synthesis)
+        self.assertIn("# Web Research - MCP", markdown)
+        self.assertIn("https://example.com", markdown)
+
+    def test_state_store_initializes(self):
+        state = GoldfishState(ROOT)
+        self.assertTrue(state.path.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

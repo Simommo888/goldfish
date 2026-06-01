@@ -1,0 +1,181 @@
+{
+  "official": [
+    {
+      "name": "OpenAI News",
+      "category": "official",
+      "priority": 5,
+      "url": "https://openai.com/news/",
+      "rss_url": "https://openai.com/news/rss.xml",
+      "enabled": true,
+      "notes": "官方新闻源；如 RSS 不可用则待人工查看。"
+    },
+    {
+      "name": "Anthropic Newsroom",
+      "category": "official",
+      "priority": 5,
+      "url": "https://www.anthropic.com/news",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "Google DeepMind Blog",
+      "category": "official",
+      "priority": 5,
+      "url": "https://deepmind.google/discover/blog/",
+      "rss_url": "https://deepmind.google/discover/blog/rss.xml",
+      "enabled": true,
+      "notes": "官方研究与产品动态；如 RSS 不可用则待人工查看。"
+    },
+    {
+      "name": "Google Research Blog",
+      "category": "official",
+      "priority": 4,
+      "url": "https://research.google/blog/",
+      "rss_url": "https://research.google/blog/rss/",
+      "enabled": true,
+      "notes": "Google Research 官方博客。"
+    },
+    {
+      "name": "Hugging Face Blog",
+      "category": "official",
+      "priority": 4,
+      "url": "https://huggingface.co/blog",
+      "rss_url": "https://huggingface.co/blog/feed.xml",
+      "enabled": true,
+      "notes": "Hugging Face 官方博客。"
+    },
+    {
+      "name": "Microsoft AI Blog",
+      "category": "official",
+      "priority": 4,
+      "url": "https://blogs.microsoft.com/ai/",
+      "rss_url": "https://blogs.microsoft.com/ai/feed/",
+      "enabled": true,
+      "notes": "Microsoft AI 官方博客。"
+    },
+    {
+      "name": "Meta AI Blog",
+      "category": "official",
+      "priority": 4,
+      "url": "https://ai.meta.com/blog/",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "NVIDIA Blog",
+      "category": "official",
+      "priority": 4,
+      "url": "https://blogs.nvidia.com/",
+      "rss_url": "https://blogs.nvidia.com/feed/",
+      "enabled": true,
+      "notes": "NVIDIA 官方博客，内容较宽，需要关键词过滤。"
+    }
+  ],
+  "research": [
+    {
+      "name": "arXiv cs.AI",
+      "category": "research",
+      "priority": 4,
+      "url": "https://arxiv.org/list/cs.AI/recent",
+      "rss_url": "http://export.arxiv.org/rss/cs.AI",
+      "enabled": true,
+      "notes": "AI 论文 RSS。"
+    },
+    {
+      "name": "arXiv cs.CL",
+      "category": "research",
+      "priority": 4,
+      "url": "https://arxiv.org/list/cs.CL/recent",
+      "rss_url": "http://export.arxiv.org/rss/cs.CL",
+      "enabled": true,
+      "notes": "自然语言处理论文 RSS。"
+    },
+    {
+      "name": "arXiv cs.LG",
+      "category": "research",
+      "priority": 4,
+      "url": "https://arxiv.org/list/cs.LG/recent",
+      "rss_url": "http://export.arxiv.org/rss/cs.LG",
+      "enabled": true,
+      "notes": "机器学习论文 RSS。"
+    },
+    {
+      "name": "Hugging Face Daily Papers",
+      "category": "research",
+      "priority": 4,
+      "url": "https://huggingface.co/papers",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "Papers with Code",
+      "category": "research",
+      "priority": 3,
+      "url": "https://paperswithcode.com/",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    }
+  ],
+  "open_source": [
+    {
+      "name": "GitHub Trending",
+      "category": "open_source",
+      "priority": 5,
+      "url": "https://github.com/trending/python?since=daily",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "公开页面轻量解析；失败则待人工查看。"
+    },
+    {
+      "name": "Trendshift",
+      "category": "open_source",
+      "priority": 3,
+      "url": "https://trendshift.io/",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "Hugging Face Spaces",
+      "category": "open_source",
+      "priority": 3,
+      "url": "https://huggingface.co/spaces",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    }
+  ],
+  "product": [
+    {
+      "name": "Product Hunt AI",
+      "category": "product",
+      "priority": 4,
+      "url": "https://www.producthunt.com/topics/artificial-intelligence",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "Product Hunt AI Agents",
+      "category": "product",
+      "priority": 4,
+      "url": "https://www.producthunt.com/topics/ai-agents",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    },
+    {
+      "name": "Hacker News AI placeholder",
+      "category": "product",
+      "priority": 3,
+      "url": "https://hn.algolia.com/?q=AI",
+      "rss_url": "",
+      "enabled": true,
+      "notes": "待人工查看。"
+    }
+  ]
+}
