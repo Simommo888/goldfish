@@ -75,7 +75,7 @@ def setup_banner() -> str:
         orange("><(((o>  goldfish setup"),
         water("model dock"),
         "",
-        cream("Commands:") + " /model  /model list  /language  /doctor  /exit",
+        cream("Commands:") + " /model  /model list  /search  /search list  /language  /doctor  /exit",
         dim("API keys are stored in user environment variables, not project files."),
     ]
     return "\n".join(_panel(92, 7, "SETUP", lines))

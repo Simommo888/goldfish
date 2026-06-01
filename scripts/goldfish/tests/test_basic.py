@@ -22,6 +22,7 @@ from modules.providers.registry import resolve_llm_connection
 from modules.report_generator import generate_daily_report
 from modules.search_engine import search_goldfish
 from modules.scorer import score_item
+from modules.setup_agent import SetupSession, configure_search_environment, find_search_provider
 from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
@@ -398,6 +399,37 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Available output languages", result.stdout)
+
+    def test_setup_search_list_works(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "setup",
+            "--once",
+            "/search list",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("Tavily Search API", result.stdout)
+        self.assertIn("Jina Search", result.stdout)
+        self.assertIn("DuckDuckGo", result.stdout)
+
+    def test_setup_search_noninteractive_does_not_prompt_for_key(self):
+        old_tavily = os.environ.get("TAVILY_API_KEY")
+        try:
+            os.environ.pop("TAVILY_API_KEY", None)
+            answer = SetupSession(interactive=False).handle("/search tavily")
+            self.assertIn("requires `TAVILY_API_KEY`", answer)
+            self.assertIn("goldfish setup", answer)
+        finally:
+            _restore_env("TAVILY_API_KEY", old_tavily)
+
+    def test_search_provider_setup_helper_for_duckduckgo(self):
+        profile = find_search_provider("duckduckgo")
+        self.assertIsNotNone(profile)
+        configured = configure_search_environment(profile, persist_user=False)
+        self.assertEqual(configured["provider"], "duckduckgo")
+        self.assertFalse(configured["api_key_saved"])
 
     def test_setup_model_list(self):
         command = [

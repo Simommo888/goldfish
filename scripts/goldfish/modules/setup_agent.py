@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass
 from typing import Any, Dict
 
 from . import cli_theme
 from .config_loader import load_config
-from .model_setup import configure_environment, find_profile, model_menu, prompt_for_api_key
+from .model_setup import configure_environment, find_profile, model_menu, prompt_for_api_key, set_user_environment_variable
 from .tool_registry import DEFAULT_REGISTRY
 
 
@@ -20,6 +21,17 @@ class LanguageProfile:
     aliases: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SearchProviderProfile:
+    key: str
+    label: str
+    env_key: str
+    endpoint_env_key: str
+    default_endpoint: str
+    aliases: tuple[str, ...]
+    requires_api_key: bool = True
+
+
 LANGUAGE_PROFILES = (
     LanguageProfile("zh-CN", "Chinese (Simplified)", ("zh", "cn", "chinese", "simplified", "中文", "简体中文", "简体")),
     LanguageProfile("en", "English", ("english", "en-US", "en-us", "us")),
@@ -28,10 +40,41 @@ LANGUAGE_PROFILES = (
 )
 
 
+SEARCH_PROVIDER_PROFILES = (
+    SearchProviderProfile(
+        key="tavily",
+        label="Tavily Search API",
+        env_key="TAVILY_API_KEY",
+        endpoint_env_key="TAVILY_SEARCH_ENDPOINT",
+        default_endpoint="https://api.tavily.com/search",
+        aliases=("1", "tavily-search"),
+    ),
+    SearchProviderProfile(
+        key="jina",
+        label="Jina Search",
+        env_key="JINA_API_KEY",
+        endpoint_env_key="JINA_SEARCH_ENDPOINT",
+        default_endpoint="https://s.jina.ai/",
+        aliases=("2", "jina-search", "jina_ai"),
+    ),
+    SearchProviderProfile(
+        key="duckduckgo",
+        label="DuckDuckGo HTML fallback",
+        env_key="",
+        endpoint_env_key="",
+        default_endpoint="",
+        aliases=("3", "ddg", "duck"),
+        requires_api_key=False,
+    ),
+)
+
+
 SETUP_HELP = """goldfish setup commands:
 
 /model          Select a model and enter its API key
 /model list     Show available model profiles
+/search         Select a web search provider and enter its API key
+/search list    Show available search providers
 /language       Choose output language
 /doctor         Check current runtime and model configuration
 /exit           Leave setup
@@ -82,9 +125,11 @@ class SetupSession:
             return json.dumps(DEFAULT_REGISTRY.execute("doctor"), ensure_ascii=False, indent=2)
         if lower.startswith("/model"):
             return self._model(text)
+        if lower.startswith("/search"):
+            return self._search(text)
         if lower.startswith("/language"):
             return self._language(text)
-        return "Unknown setup command. Try /model, /language, /doctor, help, or /exit."
+        return "Unknown setup command. Try /model, /search, /language, /doctor, help, or /exit."
 
     def _model(self, command: str) -> str:
         parts = command.split(maxsplit=1)
@@ -115,6 +160,49 @@ class SetupSession:
         persist_model_settings(configured)
         return _setup_result(configured)
 
+    def _search(self, command: str) -> str:
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        if arg.lower() in {"list", "ls", "help", "status"}:
+            return search_provider_status() + "\n\n" + search_provider_menu()
+        return self.configure_search_provider(arg)
+
+    def configure_search_provider(self, arg: str = "") -> str:
+        if not arg:
+            if not self.interactive:
+                return search_provider_status() + "\n\n" + search_provider_menu()
+            print(search_provider_menu())
+            arg = input(cli_theme.prompt("search")).strip()
+            if not arg:
+                return "Canceled: no search provider was selected."
+
+        profile = find_search_provider(arg)
+        if profile is None:
+            return f"Unknown search provider: {arg}\n\n{search_provider_menu()}"
+
+        if not profile.requires_api_key:
+            configured = configure_search_environment(profile, api_key="", endpoint="", persist_user=True)
+            return _search_setup_result(configured)
+
+        existing = os.getenv(profile.env_key) or ""
+        if not self.interactive:
+            if existing:
+                configured = configure_search_environment(profile, api_key=existing, endpoint="", persist_user=True)
+                return _search_setup_result(configured)
+            return (
+                f"{profile.label} requires `{profile.env_key}`.\n"
+                "Run `goldfish setup`, enter `/search`, choose this provider, then paste the API key.\n"
+                "No API key is written to project files."
+            )
+
+        api_key = prompt_for_search_api_key(profile.env_key, hidden=self.hidden_key)
+        if not api_key:
+            return "Canceled: no API key was entered and no existing environment variable was found."
+        endpoint_prompt = f"{profile.endpoint_env_key} [{profile.default_endpoint}]> "
+        endpoint = input(endpoint_prompt).strip() or profile.default_endpoint
+        configured = configure_search_environment(profile, api_key=api_key, endpoint=endpoint, persist_user=True)
+        return _search_setup_result(configured)
+
     def _language(self, command: str) -> str:
         parts = command.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -141,6 +229,113 @@ def _setup_result(configured: Dict[str, Any]) -> str:
         "- API key was written to user-level environment variables only.\n"
         "- Next: goldfish doctor\n"
         "- Then: goldfish run"
+    )
+
+
+def search_provider_menu() -> str:
+    current = os.getenv("GOLDFISH_SEARCH_PROVIDER", "auto")
+    lines = ["Select the public web search provider goldfish should use:"]
+    for index, profile in enumerate(SEARCH_PROVIDER_PROFILES, start=1):
+        marker = "*" if profile.key == current else " "
+        key_info = profile.env_key if profile.requires_api_key else "no API key"
+        lines.append(f"{marker} {index}. {profile.label}  provider={profile.key}  env={key_info}")
+    lines.extend(
+        [
+            "",
+            "Recommended order: Tavily -> Jina -> DuckDuckGo.",
+            "Enter a number or provider key.",
+            "API keys are saved to user-level environment variables only.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def find_search_provider(choice: str) -> SearchProviderProfile | None:
+    cleaned = (choice or "").strip()
+    if not cleaned:
+        return None
+    lowered = cleaned.lower()
+    for profile in SEARCH_PROVIDER_PROFILES:
+        if lowered in {profile.key.lower(), profile.label.lower(), *{alias.lower() for alias in profile.aliases}}:
+            return profile
+    return None
+
+
+def configure_search_environment(
+    profile: SearchProviderProfile,
+    *,
+    api_key: str = "",
+    endpoint: str = "",
+    persist_user: bool = False,
+) -> Dict[str, str]:
+    values = {"GOLDFISH_SEARCH_PROVIDER": profile.key}
+    if profile.requires_api_key:
+        values[profile.env_key] = api_key
+        if endpoint or profile.default_endpoint:
+            values[profile.endpoint_env_key] = endpoint or profile.default_endpoint
+
+    for key, value in values.items():
+        if value == "":
+            continue
+        os.environ[key] = value
+        if persist_user:
+            set_user_environment_variable(key, value)
+
+    return {
+        "provider": profile.key,
+        "label": profile.label,
+        "env_key": profile.env_key or "none",
+        "endpoint_env_key": profile.endpoint_env_key or "none",
+        "endpoint": endpoint or profile.default_endpoint,
+        "api_key_saved": bool(profile.requires_api_key and api_key),
+    }
+
+
+def prompt_for_search_api_key(env_key: str, hidden: bool = False) -> str:
+    existing = os.getenv(env_key) or ""
+    suffix = ", press Enter to keep the current environment value" if existing else ""
+    prompt = f"Enter {env_key}{suffix}: "
+    if hidden:
+        import getpass
+
+        try:
+            value = getpass.getpass(prompt).strip()
+        except Exception:
+            value = input(prompt).strip()
+    else:
+        print("Paste-friendly input is enabled. The key is not written to project files or logs, but it may be visible in this terminal.")
+        value = input(prompt).strip()
+    return value or existing
+
+
+def search_provider_status() -> str:
+    current = os.getenv("GOLDFISH_SEARCH_PROVIDER", "auto")
+    tavily = "configured" if os.getenv("TAVILY_API_KEY") else "missing"
+    jina = "configured" if (os.getenv("JINA_API_KEY") or os.getenv("JINA_SEARCH_API_KEY")) else "missing"
+    return (
+        "Current search provider configuration:\n"
+        f"- GOLDFISH_SEARCH_PROVIDER: {current}\n"
+        f"- TAVILY_API_KEY: {tavily}\n"
+        f"- JINA_API_KEY/JINA_SEARCH_API_KEY: {jina}\n"
+        "- DuckDuckGo fallback: available without API key"
+    )
+
+
+def _search_setup_result(configured: Dict[str, str]) -> str:
+    key_line = (
+        f"- api_key_env: {configured['env_key']}\n"
+        if configured.get("api_key_saved")
+        else "- api_key_env: none required\n"
+    )
+    endpoint = configured.get("endpoint") or "default"
+    return (
+        "Search provider configuration saved.\n"
+        f"- provider: {configured['provider']} ({configured['label']})\n"
+        f"- endpoint: {endpoint}\n"
+        f"{key_line}"
+        "- API key was written to user-level environment variables only.\n"
+        "- Next: goldfish doctor\n"
+        "- Then: goldfish research \"MCP server commercial opportunities\""
     )
 
 

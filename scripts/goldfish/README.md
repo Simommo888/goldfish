@@ -473,7 +473,27 @@ Search providers:
 - `jina`: uses Jina Search. Configure `JINA_API_KEY`; optional `JINA_SEARCH_ENDPOINT`.
 - `duckduckgo`: no-key public HTML fallback.
 
-Default provider can be set with:
+Recommended setup flow:
+
+```powershell
+goldfish setup
+```
+
+Then enter:
+
+```text
+/search
+```
+
+Choose Tavily, Jina, or DuckDuckGo. Tavily/Jina keys are saved to user-level environment variables only, not project files.
+
+Non-interactive status:
+
+```powershell
+goldfish setup --once "/search list"
+```
+
+The default provider can also be set manually with:
 
 ```powershell
 $env:GOLDFISH_SEARCH_PROVIDER="tavily"
