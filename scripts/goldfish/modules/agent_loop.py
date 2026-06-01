@@ -423,10 +423,8 @@ def _wants_project_search(text: str) -> bool:
 
 
 def _preferred_search_provider(text: str) -> str:
-    if "bing" in text:
-        return "bing"
-    if "google" in text or "谷歌" in text:
-        return "google"
+    if "brave" in text:
+        return "brave"
     if "duckduckgo" in text or "ddg" in text:
         return "duckduckgo"
     return "auto"

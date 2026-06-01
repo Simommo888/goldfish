@@ -367,9 +367,8 @@ Built-in information-retrieval skills:
 - `retrieval-planning`: turn a vague research goal into a bounded tool plan.
 - `query-expansion`: generate broad, narrow, source-specific, and local-search queries.
 - `web-research`: collect public web evidence without login, cookies, or anti-scraping bypass.
-- `internet-search`: choose Bing, Google, or DuckDuckGo for public web retrieval.
-- `bing-search`: use Bing Web Search when `BING_SEARCH_API_KEY` is configured.
-- `google-search`: use Google Custom Search when `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CX` are configured.
+- `internet-search`: choose Brave or DuckDuckGo for public web retrieval.
+- `brave-search`: use Brave Search API when `BRAVE_SEARCH_API_KEY` is configured.
 - `source-evaluation`: judge source reliability, priority, freshness, and failure risk.
 - `evidence-capture`: preserve claim-level evidence records with URLs and confidence.
 - `fact-checking`: mark claims as verified, uncertain, unsupported, or out of scope.
@@ -456,35 +455,32 @@ goldfish search "RAG 璇勬祴"
 goldfish research "MCP server best practices"
 goldfish research "AI coding commercialization" --limit 8 --fetch-limit 5
 goldfish research "RAG evaluation methods" --no-llm
-goldfish research "MCP server commercial opportunities" --search-provider bing
-goldfish research "RAG evaluation framework docs" --search-provider google
+goldfish research "MCP server commercial opportunities" --search-provider brave
 ```
 
 鑱婂ぉ妯″紡閲屼篃鍙互浣跨敤锛?
 ```text
 /research MCP server best practices
-/research MCP server commercial opportunities --search-provider bing
+/research MCP server commercial opportunities --search-provider brave
 ```
 
 Search providers:
 
-- `auto`: tries Bing when `BING_SEARCH_API_KEY` exists, then Google when `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CX` exist, then DuckDuckGo fallback.
-- `bing`: uses Bing Web Search. Configure `BING_SEARCH_API_KEY`; optional `BING_SEARCH_ENDPOINT`.
-- `google`: uses Google Custom Search. Configure `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CX`.
+- `auto`: tries Brave when `BRAVE_SEARCH_API_KEY` exists, then DuckDuckGo fallback.
+- `brave`: uses Brave Search API. Configure `BRAVE_SEARCH_API_KEY`; optional `BRAVE_SEARCH_ENDPOINT`.
 - `duckduckgo`: no-key public HTML fallback.
 
 Default provider can be set with:
 
 ```powershell
-$env:GOLDFISH_SEARCH_PROVIDER="bing"
+$env:GOLDFISH_SEARCH_PROVIDER="brave"
 ```
 
 Related skills:
 
 ```powershell
 goldfish skills internet-search
-goldfish skills bing-search
-goldfish skills google-search
+goldfish skills brave-search
 ```
 
 杈撳嚭榛樿淇濆瓨鍒帮細

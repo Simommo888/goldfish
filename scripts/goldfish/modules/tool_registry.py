@@ -419,15 +419,9 @@ def _config_file_status() -> Dict[str, bool]:
 def _search_provider_status() -> Dict[str, Any]:
     return {
         "default": os.environ.get("GOLDFISH_SEARCH_PROVIDER", "auto"),
-        "bing": {
-            "configured": bool(os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY")),
-            "endpoint": os.environ.get("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search"),
-        },
-        "google": {
-            "configured": bool(
-                (os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-                and (os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID"))
-            ),
+        "brave": {
+            "configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY")),
+            "endpoint": os.environ.get("BRAVE_SEARCH_ENDPOINT", "https://api.search.brave.com/res/v1/web/search"),
         },
         "duckduckgo": {"configured": True, "fallback": True},
     }

@@ -67,10 +67,8 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: s
     errors = []
     for search_provider in _search_provider_order(provider):
         try:
-            if search_provider == "bing":
-                results = search_bing_web(query, limit=limit, timeout=timeout)
-            elif search_provider == "google":
-                results = search_google_custom_search(query, limit=limit, timeout=timeout)
+            if search_provider == "brave":
+                results = search_brave_web(query, limit=limit, timeout=timeout)
             else:
                 results = search_duckduckgo_html(query, limit=limit, timeout=timeout)
             if results:
@@ -91,28 +89,18 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: s
     ]
 
 
-def search_bing_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
-    api_key = os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY")
-    endpoint = os.environ.get("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search").rstrip("/")
+def search_brave_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY")
+    endpoint = os.environ.get("BRAVE_SEARCH_ENDPOINT", "https://api.search.brave.com/res/v1/web/search").rstrip("/")
     if not api_key:
-        raise RuntimeError("missing BING_SEARCH_API_KEY")
-    url = endpoint + "?" + urllib.parse.urlencode({"q": query, "count": max(1, min(limit, 10)), "responseFilter": "Webpages"})
-    payload = _fetch_json(url, timeout=timeout, headers={"Ocp-Apim-Subscription-Key": api_key})
-    return _bing_results_from_payload(payload, limit=limit)
-
-
-def search_google_custom_search(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
-    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    cx = os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID")
-    if not api_key:
-        raise RuntimeError("missing GOOGLE_SEARCH_API_KEY")
-    if not cx:
-        raise RuntimeError("missing GOOGLE_SEARCH_CX")
-    url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode(
-        {"key": api_key, "cx": cx, "q": query, "num": max(1, min(limit, 10))}
+        raise RuntimeError("missing BRAVE_SEARCH_API_KEY")
+    url = endpoint + "?" + urllib.parse.urlencode({"q": query, "count": max(1, min(limit, 20))})
+    payload = _fetch_json(
+        url,
+        timeout=timeout,
+        headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
     )
-    payload = _fetch_json(url, timeout=timeout)
-    return _google_results_from_payload(payload, limit=limit)
+    return _brave_results_from_payload(payload, limit=limit)
 
 
 def search_duckduckgo_html(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
@@ -126,7 +114,7 @@ def search_duckduckgo_html(query: str, limit: int = 6, timeout: int = 12) -> Lis
             continue
         parser = DuckDuckGoHTMLParser()
         parser.feed(html)
-        results = parser.results[:limit]
+        results = [item for item in parser.results if _is_search_result_url(item.get("url", ""))][:limit]
         if results:
             return results
         errors.append(f"{url}: no parseable result blocks")
@@ -342,24 +330,19 @@ class DuckDuckGoHTMLParser(HTMLParser):
 def _search_provider_order(provider: str | None = None) -> List[str]:
     requested = (provider or os.environ.get("GOLDFISH_SEARCH_PROVIDER") or "auto").strip().lower()
     aliases = {
+        "brave-search": "brave",
+        "brave_web": "brave",
         "ddg": "duckduckgo",
         "duck": "duckduckgo",
         "duckduckgo-html": "duckduckgo",
-        "google-cse": "google",
-        "google_custom_search": "google",
-        "bing-web": "bing",
     }
     requested = aliases.get(requested, requested)
-    if requested in {"bing", "google", "duckduckgo"}:
+    if requested in {"brave", "duckduckgo"}:
         fallback = [item for item in ["duckduckgo"] if item != requested]
         return [requested, *fallback]
     order: List[str] = []
-    if os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY"):
-        order.append("bing")
-    if (os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY")) and (
-        os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID")
-    ):
-        order.append("google")
+    if os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY"):
+        order.append("brave")
     order.append("duckduckgo")
     return order
 
@@ -373,34 +356,13 @@ def _fetch_json(url: str, timeout: int = 12, headers: Dict[str, str] | None = No
         return json.loads(response.read().decode(charset, errors="replace"))
 
 
-def _bing_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
-    values = payload.get("webPages", {}).get("value", [])
+def _brave_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    values = payload.get("web", {}).get("results", [])
     results = []
     for item in values[:limit]:
         if not isinstance(item, dict):
             continue
-        url = str(item.get("url") or "").strip()
-        title = str(item.get("name") or "").strip()
-        if not url or not title:
-            continue
-        results.append(
-            {
-                "title": title,
-                "url": url,
-                "snippet": str(item.get("snippet") or "").strip(),
-                "source": "Bing Web Search",
-            }
-        )
-    return results
-
-
-def _google_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
-    values = payload.get("items", [])
-    results = []
-    for item in values[:limit]:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("link") or "").strip()
+        url = str(item.get("url") or item.get("profile", {}).get("url") or "").strip()
         title = str(item.get("title") or "").strip()
         if not url or not title:
             continue
@@ -408,8 +370,8 @@ def _google_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> Lis
             {
                 "title": title,
                 "url": url,
-                "snippet": str(item.get("snippet") or "").strip(),
-                "source": "Google Custom Search",
+                "snippet": strip_html(str(item.get("description") or item.get("snippet") or "")).strip(),
+                "source": "Brave Search",
             }
         )
     return results
@@ -431,6 +393,19 @@ def _is_fetchable_url(url: str) -> bool:
         return False
     lowered = parsed.path.lower()
     return not lowered.endswith((".pdf", ".zip", ".tar", ".gz", ".mp4", ".mp3", ".png", ".jpg", ".jpeg", ".gif"))
+
+
+def _is_search_result_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if parsed.netloc.endswith("duckduckgo.com"):
+        return False
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/y.js"):
+        return False
+    if "ad_domain=" in parsed.query or "ad_provider=" in parsed.query:
+        return False
+    return True
 
 
 def _page_block(index: int, page: Dict[str, Any]) -> str:

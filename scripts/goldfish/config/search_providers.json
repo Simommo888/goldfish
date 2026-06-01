@@ -1,50 +1,31 @@
 {
-  "version": 1,
+  "version": 2,
   "default_provider": "auto",
   "notes": [
     "No API key is stored here. Configure keys with environment variables only.",
-    "auto tries Bing when BING_SEARCH_API_KEY exists, then Google when GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX exist, then DuckDuckGo HTML fallback.",
+    "auto tries Brave when BRAVE_SEARCH_API_KEY exists, then DuckDuckGo HTML fallback.",
     "All providers are for public web search only. Do not log in, store cookies, or bypass anti-scraping controls."
   ],
   "providers": [
     {
-      "name": "bing",
+      "name": "brave",
       "enabled": true,
-      "display_name": "Bing Web Search",
+      "display_name": "Brave Search API",
       "env": {
-        "api_key": "BING_SEARCH_API_KEY",
-        "endpoint": "BING_SEARCH_ENDPOINT"
+        "api_key": "BRAVE_SEARCH_API_KEY",
+        "endpoint": "BRAVE_SEARCH_ENDPOINT"
       },
       "fallback_env": {
-        "api_key": "AZURE_BING_SEARCH_KEY"
+        "api_key": "BRAVE_API_KEY"
       },
       "best_for": [
         "current web research",
         "market scans",
-        "company/product pages",
+        "AI product and startup discovery",
+        "Agent and RAG source discovery",
         "broad English queries"
       ],
-      "notes": "Uses the Bing Web Search compatible endpoint. Default endpoint is https://api.bing.microsoft.com/v7.0/search."
-    },
-    {
-      "name": "google",
-      "enabled": true,
-      "display_name": "Google Custom Search",
-      "env": {
-        "api_key": "GOOGLE_SEARCH_API_KEY",
-        "cx": "GOOGLE_SEARCH_CX"
-      },
-      "fallback_env": {
-        "api_key": "GOOGLE_API_KEY",
-        "cx": "GOOGLE_CSE_ID"
-      },
-      "best_for": [
-        "precise source discovery",
-        "technical docs",
-        "specific company or product searches",
-        "site-restricted searches"
-      ],
-      "notes": "Requires a Google Programmable Search Engine cx id."
+      "notes": "Recommended default paid provider for goldfish. Default endpoint is https://api.search.brave.com/res/v1/web/search."
     },
     {
       "name": "duckduckgo",

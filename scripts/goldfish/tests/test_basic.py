@@ -26,7 +26,7 @@ from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
-from modules.web_researcher import _bing_results_from_payload, _google_results_from_payload, _search_provider_order
+from modules.web_researcher import _brave_results_from_payload, _search_provider_order
 
 
 def _restore_env(name: str, value: str | None) -> None:
@@ -247,46 +247,40 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         names = {skill["name"] for skill in skills}
         self.assertIn("business-idea", names)
         self.assertIn("internet-search", names)
-        self.assertIn("bing-search", names)
-        self.assertIn("google-search", names)
+        self.assertIn("brave-search", names)
         business = load_skill("business-idea")
         self.assertIn("Target user", business["content"])
 
     def test_search_provider_order_uses_env_and_fallback(self):
-        old_bing = os.environ.get("BING_SEARCH_API_KEY")
-        old_google = os.environ.get("GOOGLE_SEARCH_API_KEY")
-        old_cx = os.environ.get("GOOGLE_SEARCH_CX")
+        old_brave = os.environ.get("BRAVE_SEARCH_API_KEY")
         old_provider = os.environ.get("GOLDFISH_SEARCH_PROVIDER")
         try:
-            os.environ.pop("BING_SEARCH_API_KEY", None)
-            os.environ.pop("GOOGLE_SEARCH_API_KEY", None)
-            os.environ.pop("GOOGLE_SEARCH_CX", None)
+            os.environ.pop("BRAVE_SEARCH_API_KEY", None)
             os.environ.pop("GOLDFISH_SEARCH_PROVIDER", None)
             self.assertEqual(_search_provider_order(), ["duckduckgo"])
-            os.environ["BING_SEARCH_API_KEY"] = "test-key"
-            self.assertEqual(_search_provider_order()[0], "bing")
-            self.assertEqual(_search_provider_order("google")[0], "google")
+            os.environ["BRAVE_SEARCH_API_KEY"] = "test-key"
+            self.assertEqual(_search_provider_order()[0], "brave")
+            self.assertEqual(_search_provider_order("brave")[0], "brave")
         finally:
-            _restore_env("BING_SEARCH_API_KEY", old_bing)
-            _restore_env("GOOGLE_SEARCH_API_KEY", old_google)
-            _restore_env("GOOGLE_SEARCH_CX", old_cx)
+            _restore_env("BRAVE_SEARCH_API_KEY", old_brave)
             _restore_env("GOLDFISH_SEARCH_PROVIDER", old_provider)
 
-    def test_bing_and_google_search_payload_parsers(self):
-        bing = _bing_results_from_payload(
+    def test_brave_search_payload_parser(self):
+        brave = _brave_results_from_payload(
             {
-                "webPages": {
-                    "value": [
-                        {"name": "Example Bing", "url": "https://example.com/bing", "snippet": "Bing snippet"}
+                "web": {
+                    "results": [
+                        {
+                            "title": "Example Brave",
+                            "url": "https://example.com/brave",
+                            "description": "Brave snippet",
+                        }
                     ]
                 }
             }
         )
-        google = _google_results_from_payload(
-            {"items": [{"title": "Example Google", "link": "https://example.com/google", "snippet": "Google snippet"}]}
-        )
-        self.assertEqual(bing[0]["source"], "Bing Web Search")
-        self.assertEqual(google[0]["source"], "Google Custom Search")
+        self.assertEqual(brave[0]["source"], "Brave Search")
+        self.assertEqual(brave[0]["url"], "https://example.com/brave")
 
     def test_source_health_records(self):
         sources = [{"name": "Example", "enabled": True}]
