@@ -135,7 +135,46 @@ class CommandRouter:
             return RoutedCommand("feedback_list", {}, "Feedback records:")
         if "history" in lowered:
             return RoutedCommand("history", {}, "Recent runs:")
-        if any(word in lowered for word in ["research", "investigate", "study", "market", "opportunity", "trend", "mcp", "rag", "ai coding", "研究", "商业机会", "趋势"]):
+        if any(
+            word in lowered
+            for word in [
+                "research",
+                "investigate",
+                "study",
+                "market",
+                "opportunity",
+                "trend",
+                "mcp",
+                "rag",
+                "ai coding",
+                "business idea",
+                "startup",
+                "mvp",
+                "pricing",
+                "monetization",
+                "prompt",
+                "permanent note",
+                "draft",
+                "source quality",
+                "fact check",
+                "knowledge base",
+                "skill",
+                "研究",
+                "商业机会",
+                "趋势",
+                "商业想法",
+                "创业",
+                "变现",
+                "永久笔记",
+                "提示词",
+                "草稿",
+                "知识库",
+                "沉淀",
+                "信源",
+                "来源",
+                "核验",
+            ]
+        ):
             return RoutedCommand("agent", {**args, "goal": text}, "Agent loop completed:")
         if "search" in lowered:
             query = text.replace("search", "", 1).strip()

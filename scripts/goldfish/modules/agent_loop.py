@@ -20,10 +20,11 @@ from uuid import uuid4
 from .config_loader import load_config
 from .model_setup import redact_secret_text
 from .providers.registry import get_provider, resolve_llm_connection
+from .skill_router import select_skills
 from .utils import kb_root, now, safe_filename
 
 
-ALLOWED_TOOLS = {"research_web", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli"}
+ALLOWED_TOOLS = {"research_web", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli", "skills"}
 MAX_RESULT_CHARS = 12000
 MAX_TEXT_CHARS = 1800
 
@@ -65,21 +66,24 @@ def run_agent_loop(
     clean_goal = redact_secret_text(goal.strip())
     task = _create_task_workspace(root, clean_goal)
     step_limit = max(1, min(max_steps, 8))
-    plan = make_plan(clean_goal, max_steps=step_limit, no_save=no_save)
+    selected_skills = select_skills(clean_goal)
+    plan = make_plan(clean_goal, max_steps=step_limit, no_save=no_save, selected_skills=selected_skills)
     plan_revisions = [_plan_revision_payload(0, "initial plan", plan)]
     observations: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
     stop_reason = "plan_complete"
 
     _safe_write(task["path"] / "goal.md", f"# Goal\n\n{clean_goal}\n")
+    _safe_write(task["path"] / "selected_skills.json", json.dumps(selected_skills, ensure_ascii=False, indent=2))
+    _safe_write(task["path"] / "skills.md", _skills_markdown(selected_skills))
     _safe_write(task["path"] / "plan.md", _plan_markdown(clean_goal, plan))
     _append_jsonl(task["path"] / "plan_revisions.jsonl", plan_revisions[0])
-    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "planning", "")
+    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "planning", "", selected_skills)
 
     cursor = 0
     while cursor < len(plan) and len(observations) < step_limit:
         planned = plan[cursor]
-        _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "executing", f"step-{planned.step}")
+        _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "executing", f"step-{planned.step}", selected_skills)
         observation = _execute_step(planned, registry)
         observations.append(observation)
         tool_calls.append(
@@ -126,10 +130,11 @@ def run_agent_loop(
             "steps_executed": len(observations),
             "stop_reason": stop_reason,
         },
+        "selected_skills": selected_skills,
     }
 
     _safe_write(task["path"] / "observations.json", json.dumps(observations, ensure_ascii=False, indent=2))
-    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "final", stop_reason)
+    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "final", stop_reason, selected_skills)
     _safe_write(task["path"] / "final.md", _final_markdown(final, observations))
 
     return {
@@ -138,6 +143,7 @@ def run_agent_loop(
         "task_path": str(task["path"]),
         "goal": clean_goal,
         "plan": [_step_dict(step) for step in plan],
+        "selected_skills": selected_skills,
         "observations": observations,
         "plan_revisions": plan_revisions,
         "execution": final["execution"],
@@ -153,12 +159,31 @@ def run_agent_loop(
     }
 
 
-def make_plan(goal: str, *, max_steps: int = 5, no_save: bool = False) -> List[PlannedStep]:
+def make_plan(
+    goal: str,
+    *,
+    max_steps: int = 5,
+    no_save: bool = False,
+    selected_skills: List[Dict[str, Any]] | None = None,
+) -> List[PlannedStep]:
     lowered = goal.lower()
     steps: List[PlannedStep] = []
+    selected_skills = selected_skills or []
+
+    if selected_skills:
+        primary = selected_skills[0]
+        steps.append(
+            PlannedStep(
+                len(steps) + 1,
+                "reading",
+                "skills",
+                {"name": primary["name"]},
+                f"Load selected skill guidance: {primary['name']}.",
+            )
+    )
 
     if _wants_doctor(lowered):
-        steps.append(PlannedStep(1, "reading", "doctor", {}, "Goal asks to inspect runtime/config health."))
+        steps.append(PlannedStep(len(steps) + 1, "reading", "doctor", {}, "Goal asks to inspect runtime/config health."))
     if _wants_tools(lowered):
         steps.append(PlannedStep(len(steps) + 1, "reading", "tools", {}, "Goal asks about available capabilities."))
     if _wants_external_cli(lowered):
@@ -175,7 +200,7 @@ def make_plan(goal: str, *, max_steps: int = 5, no_save: bool = False) -> List[P
                 "Goal asks for local/history/notes search.",
             )
         )
-    if _wants_research(lowered):
+    if _wants_research(lowered) or _skills_include(selected_skills, {"web-research", "internet-search", "business-idea", "trend-analysis"}):
         steps.append(
             PlannedStep(
                 len(steps) + 1,
@@ -192,7 +217,19 @@ def make_plan(goal: str, *, max_steps: int = 5, no_save: bool = False) -> List[P
                 "Goal asks for public web research or market/trend/opportunity study.",
             )
         )
-    if _wants_daily(lowered):
+    if _wants_local_search(lowered) or _skills_include(selected_skills, {"retrieval-planning", "knowledge-routing", "draft-writing"}):
+        if not any(step.tool == "search" for step in steps):
+            steps.append(
+                PlannedStep(
+                    len(steps) + 1,
+                    "search",
+                    "search",
+                    {"query": _strip_intent_words(goal), "limit": 8},
+                    "Selected skills need local/history/notes context.",
+                )
+            )
+
+    if _wants_daily(lowered) or _skills_include(selected_skills, {"weekly-review"}):
         real_run = _explicit_real_run(lowered)
         steps.append(
             PlannedStep(
@@ -400,6 +437,10 @@ def _rule_final(goal: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]
     return {"summary": summary, "next_actions": next_actions[:5]}
 
 
+def _skills_include(selected_skills: List[Dict[str, Any]], names: set[str]) -> bool:
+    return any(str(skill.get("name", "")) in names for skill in selected_skills)
+
+
 def _wants_external_cli(text: str) -> bool:
     return any(word in text for word in ["external cli", "external tool", "cli tool", "bash tool", "bash command"])
 
@@ -473,6 +514,29 @@ def _plan_markdown(goal: str, plan: List[PlannedStep], revisions: List[Dict[str,
     return "\n".join(lines) + "\n"
 
 
+def _skills_markdown(selected_skills: List[Dict[str, Any]]) -> str:
+    if not selected_skills:
+        return "# Selected Skills\n\nNo skill matched this goal.\n"
+    lines = ["# Selected Skills", ""]
+    for index, skill in enumerate(selected_skills, start=1):
+        lines.extend(
+            [
+                f"## {index}. {skill.get('name', 'unknown')}",
+                "",
+                f"- title: {skill.get('title', '')}",
+                f"- path: {skill.get('path', '')}",
+                f"- reason: {skill.get('reason', '')}",
+                f"- matched_keywords: {', '.join(str(item) for item in skill.get('matched_keywords', []))}",
+                "",
+                "### Preview",
+                "",
+                str(skill.get("content_preview", "")),
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _plan_revision_payload(revision: int, reason: str, plan: List[PlannedStep]) -> Dict[str, Any]:
     return {
         "revision": revision,
@@ -490,11 +554,13 @@ def _write_execution_state(
     plan_revisions: List[Dict[str, Any]],
     phase: str,
     stop_reason: str,
+    selected_skills: List[Dict[str, Any]] | None = None,
 ) -> None:
     payload = {
         "mode": "plan_execute",
         "phase": phase,
         "goal": goal,
+        "selected_skills": [{"name": skill.get("name"), "reason": skill.get("reason")} for skill in (selected_skills or [])],
         "current_step": len(observations) + 1 if phase == "executing" else None,
         "steps_planned": len(plan),
         "steps_executed": len(observations),
@@ -515,13 +581,25 @@ def _final_markdown(final: Dict[str, Any], observations: List[Dict[str, Any]]) -
         f"- stop_reason: {final['execution']['stop_reason']}",
         f"- plan_revisions: {final['execution']['plan_revisions']}",
         "",
-        "## Summary",
-        "",
-        final["summary"],
-        "",
-        "## Next Actions",
+        "## Selected Skills",
         "",
     ]
+    selected_skills = final.get("selected_skills", [])
+    if selected_skills:
+        lines.extend(f"- `{skill.get('name')}` - {skill.get('reason')}" for skill in selected_skills)
+    else:
+        lines.append("- none")
+    lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            final["summary"],
+            "",
+            "## Next Actions",
+            "",
+        ]
+    )
     lines.extend(f"- {item}" for item in final["next_actions"])
     lines.extend(["", "## Observations", ""])
     for obs in observations:
@@ -534,6 +612,8 @@ def _collect_files_written(task_path: Path, observations: List[Dict[str, Any]]) 
         str(task_path / name)
         for name in (
             "goal.md",
+            "skills.md",
+            "selected_skills.json",
             "plan.md",
             "observations.json",
             "tool_calls.jsonl",

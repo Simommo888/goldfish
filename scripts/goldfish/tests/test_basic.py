@@ -23,6 +23,7 @@ from modules.report_generator import generate_daily_report
 from modules.search_engine import search_goldfish
 from modules.scorer import score_item
 from modules.setup_agent import SetupSession, configure_search_environment, find_search_provider
+from modules.skill_router import select_skills
 from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
@@ -198,6 +199,8 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
                             "report_path": "",
                         },
                     }
+                if name == "skills":
+                    return {"status": "ok", "skill": {"name": (args or {}).get("name", "")}}
                 if name == "memory_show":
                     return {"status": "ok", "memory": {}}
                 return {"status": "ok"}
@@ -217,11 +220,17 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertTrue((Path(result["task_path"]) / "observations.json").exists())
         self.assertTrue((Path(result["task_path"]) / "execution_state.json").exists())
         self.assertTrue((Path(result["task_path"]) / "plan_revisions.jsonl").exists())
-        self.assertEqual(result["observations"][0]["tool"], "research_web")
+        self.assertTrue((Path(result["task_path"]) / "skills.md").exists())
+        self.assertTrue((Path(result["task_path"]) / "selected_skills.json").exists())
+        self.assertEqual(result["observations"][0]["tool"], "skills")
+        self.assertEqual(result["observations"][1]["tool"], "research_web")
+        self.assertTrue(result["selected_skills"])
 
     def test_agent_loop_revises_plan_after_research_failure(self):
         class FakeRegistry:
             def execute(self, name, args=None):
+                if name == "skills":
+                    return {"status": "ok", "skill": {"name": (args or {}).get("name", "")}}
                 if name == "research_web":
                     return {"status": "error", "error": "network unavailable"}
                 if name == "search":
@@ -231,17 +240,31 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
                 return {"status": "ok"}
 
         result = run_agent_loop(
-            "research MCP server commercial opportunities",
+            "web MCP server commercial opportunities",
             registry=FakeRegistry(),
-            max_steps=3,
+            max_steps=4,
             no_llm=True,
             no_save=True,
             root=ROOT,
         )
         self.assertGreaterEqual(result["execution"]["plan_revisions"], 2)
-        self.assertEqual(result["observations"][0]["tool"], "research_web")
-        self.assertEqual(result["observations"][1]["tool"], "search")
+        self.assertEqual(result["observations"][0]["tool"], "skills")
+        self.assertEqual(result["observations"][1]["tool"], "research_web")
+        self.assertEqual(result["observations"][2]["tool"], "search")
         self.assertIn("research_web_failed_add_local_search", result["plan_revisions"][1]["reason"])
+
+    def test_skill_router_selects_business_and_draft_skills(self):
+        business = select_skills("帮我从 MCP 新闻里提炼 3 个商业想法和 MVP")
+        self.assertIn("business-idea", {skill["name"] for skill in business})
+        draft = select_skills("把这个内容沉淀成永久笔记和 Prompt 草稿")
+        names = {skill["name"] for skill in draft}
+        self.assertIn("draft-writing", names)
+        self.assertIn("knowledge-routing", names)
+
+    def test_command_router_routes_skill_like_natural_language_to_agent(self):
+        routed = CommandRouter().route("帮我把这条新闻沉淀成永久笔记和商业想法", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "agent")
+        self.assertIn("永久笔记", routed.args["goal"])
 
     def test_skills_can_load(self):
         skills = list_skills()

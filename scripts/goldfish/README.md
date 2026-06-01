@@ -647,6 +647,7 @@ parse_goal -> make_plan -> execute_step -> observe -> revise_plan -> final_answe
 
 Allowed tools:
 
+- `skills`
 - `research_web`
 - `search`
 - `memory_show`
@@ -676,7 +677,11 @@ Natural-language research-like requests in chat can also route to the agent loop
 research MCP business opportunities
 study RAG evaluation trends
 help me research AI coding agent business opportunities
+帮我从 MCP 新闻里提炼 3 个商业想法和 MVP
+把这条新闻沉淀成永久笔记和 Prompt 草稿
 ```
+
+Before planning, goldfish now runs a lightweight skill router over the goal. It can select relevant `scripts/goldfish/skills/*/SKILL.md` guidance for retrieval planning, internet search, web research, business ideas, draft writing, knowledge routing, trend analysis, fact checking, source evaluation, external CLI tools, and weekly review. Tool selection still has rule-based fallback, so it works without an LLM API key.
 
 Task workspaces are saved under:
 
@@ -691,6 +696,8 @@ goal.md
 plan.md
 plan_revisions.jsonl
 execution_state.json
+selected_skills.json
+skills.md
 observations.json
 tool_calls.jsonl
 final.md
