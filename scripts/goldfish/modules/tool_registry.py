@@ -419,9 +419,13 @@ def _config_file_status() -> Dict[str, bool]:
 def _search_provider_status() -> Dict[str, Any]:
     return {
         "default": os.environ.get("GOLDFISH_SEARCH_PROVIDER", "auto"),
-        "brave": {
-            "configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY")),
-            "endpoint": os.environ.get("BRAVE_SEARCH_ENDPOINT", "https://api.search.brave.com/res/v1/web/search"),
+        "tavily": {
+            "configured": bool(os.environ.get("TAVILY_API_KEY")),
+            "endpoint": os.environ.get("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search"),
+        },
+        "jina": {
+            "configured": bool(os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY")),
+            "endpoint": os.environ.get("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/"),
         },
         "duckduckgo": {"configured": True, "fallback": True},
     }

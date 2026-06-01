@@ -8,19 +8,22 @@ Choose the best public web search provider for goldfish research goals.
 
 Use `auto` by default:
 
-1. Brave Search API if `BRAVE_SEARCH_API_KEY` or `BRAVE_API_KEY` exists.
-2. DuckDuckGo HTML fallback when no API provider is configured.
+1. Tavily Search API if `TAVILY_API_KEY` exists.
+2. Jina Search if `JINA_API_KEY` or `JINA_SEARCH_API_KEY` exists.
+3. DuckDuckGo HTML fallback when no API provider is configured.
 
 The user can force a provider with:
 
 ```powershell
-goldfish research "query" --search-provider brave
+goldfish research "query" --search-provider tavily
+goldfish research "query" --search-provider jina
 goldfish research "query" --search-provider duckduckgo
 ```
 
 ## Selection Guidance
 
-- Use Brave for broad current web research, market scans, product lists, competitor discovery, Agent/RAG/MCP topics, and general source discovery.
+- Use Tavily for agentic web research, market scans, product lists, competitor discovery, Agent/RAG/MCP topics, and general source discovery.
+- Use Jina for LLM-readable search output, web-to-text research, and backup retrieval.
 - Use DuckDuckGo when no API keys are configured or when the user wants a no-key fallback.
 
 ## Safety Rules
@@ -35,9 +38,11 @@ goldfish research "query" --search-provider duckduckgo
 
 ## Environment Variables
 
-- `GOLDFISH_SEARCH_PROVIDER`: optional default provider, one of `auto`, `brave`, `duckduckgo`.
-- `BRAVE_SEARCH_API_KEY`: Brave Search API key.
-- `BRAVE_SEARCH_ENDPOINT`: optional Brave endpoint.
+- `GOLDFISH_SEARCH_PROVIDER`: optional default provider, one of `auto`, `tavily`, `jina`, `duckduckgo`.
+- `TAVILY_API_KEY`: Tavily Search API key.
+- `TAVILY_SEARCH_ENDPOINT`: optional Tavily endpoint.
+- `JINA_API_KEY`: Jina API key.
+- `JINA_SEARCH_ENDPOINT`: optional Jina endpoint.
 
 ## Output Shape
 

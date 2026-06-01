@@ -423,8 +423,10 @@ def _wants_project_search(text: str) -> bool:
 
 
 def _preferred_search_provider(text: str) -> str:
-    if "brave" in text:
-        return "brave"
+    if "tavily" in text:
+        return "tavily"
+    if "jina" in text:
+        return "jina"
     if "duckduckgo" in text or "ddg" in text:
         return "duckduckgo"
     return "auto"

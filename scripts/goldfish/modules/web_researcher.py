@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 from html.parser import HTMLParser
 from pathlib import Path
@@ -67,8 +68,10 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: s
     errors = []
     for search_provider in _search_provider_order(provider):
         try:
-            if search_provider == "brave":
-                results = search_brave_web(query, limit=limit, timeout=timeout)
+            if search_provider == "tavily":
+                results = search_tavily_web(query, limit=limit, timeout=timeout)
+            elif search_provider == "jina":
+                results = search_jina_web(query, limit=limit, timeout=timeout)
             else:
                 results = search_duckduckgo_html(query, limit=limit, timeout=timeout)
             if results:
@@ -89,18 +92,34 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: s
     ]
 
 
-def search_brave_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
-    api_key = os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY")
-    endpoint = os.environ.get("BRAVE_SEARCH_ENDPOINT", "https://api.search.brave.com/res/v1/web/search").rstrip("/")
+def search_tavily_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("TAVILY_API_KEY")
+    endpoint = os.environ.get("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search").rstrip("/")
     if not api_key:
-        raise RuntimeError("missing BRAVE_SEARCH_API_KEY")
-    url = endpoint + "?" + urllib.parse.urlencode({"q": query, "count": max(1, min(limit, 20))})
-    payload = _fetch_json(
-        url,
+        raise RuntimeError("missing TAVILY_API_KEY")
+    payload = _post_json(
+        endpoint,
+        {
+            "query": query,
+            "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "basic"),
+            "max_results": max(1, min(limit, 20)),
+            "include_answer": False,
+            "include_raw_content": False,
+        },
         timeout=timeout,
-        headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+        headers={"Authorization": f"Bearer {api_key}"},
     )
-    return _brave_results_from_payload(payload, limit=limit)
+    return _tavily_results_from_payload(payload, limit=limit)
+
+
+def search_jina_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY")
+    endpoint = os.environ.get("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/").rstrip("/")
+    if not api_key:
+        raise RuntimeError("missing JINA_API_KEY")
+    url = endpoint + "?" + urllib.parse.urlencode({"q": query})
+    text = _fetch_text(url, timeout=timeout, headers={"Authorization": f"Bearer {api_key}", "Accept": "text/plain"})
+    return _jina_results_from_text(text, limit=limit)
 
 
 def search_duckduckgo_html(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
@@ -330,21 +349,34 @@ class DuckDuckGoHTMLParser(HTMLParser):
 def _search_provider_order(provider: str | None = None) -> List[str]:
     requested = (provider or os.environ.get("GOLDFISH_SEARCH_PROVIDER") or "auto").strip().lower()
     aliases = {
-        "brave-search": "brave",
-        "brave_web": "brave",
+        "tavily-search": "tavily",
+        "tavily_web": "tavily",
+        "jina-search": "jina",
+        "jina_web": "jina",
         "ddg": "duckduckgo",
         "duck": "duckduckgo",
         "duckduckgo-html": "duckduckgo",
     }
     requested = aliases.get(requested, requested)
-    if requested in {"brave", "duckduckgo"}:
-        fallback = [item for item in ["duckduckgo"] if item != requested]
+    if requested in {"tavily", "jina", "duckduckgo"}:
+        fallback = [item for item in ["jina", "duckduckgo"] if item != requested]
         return [requested, *fallback]
     order: List[str] = []
-    if os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY"):
-        order.append("brave")
+    if os.environ.get("TAVILY_API_KEY"):
+        order.append("tavily")
+    if os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY"):
+        order.append("jina")
     order.append("duckduckgo")
     return order
+
+
+def _fetch_text(url: str, timeout: int = 12, headers: Dict[str, str] | None = None) -> str:
+    request_headers = {"User-Agent": USER_AGENT}
+    request_headers.update(headers or {})
+    request = Request(url, headers=request_headers)
+    with urlopen(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
 
 
 def _fetch_json(url: str, timeout: int = 12, headers: Dict[str, str] | None = None) -> Dict[str, Any]:
@@ -356,8 +388,18 @@ def _fetch_json(url: str, timeout: int = 12, headers: Dict[str, str] | None = No
         return json.loads(response.read().decode(charset, errors="replace"))
 
 
-def _brave_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
-    values = payload.get("web", {}).get("results", [])
+def _post_json(url: str, payload: Dict[str, Any], timeout: int = 12, headers: Dict[str, str] | None = None) -> Dict[str, Any]:
+    request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json", "Content-Type": "application/json"}
+    request_headers.update(headers or {})
+    data = json.dumps(payload).encode("utf-8")
+    request = Request(url, data=data, headers=request_headers, method="POST")
+    with urlopen(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return json.loads(response.read().decode(charset, errors="replace"))
+
+
+def _tavily_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    values = payload.get("results", [])
     results = []
     for item in values[:limit]:
         if not isinstance(item, dict):
@@ -370,10 +412,60 @@ def _brave_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List
             {
                 "title": title,
                 "url": url,
-                "snippet": strip_html(str(item.get("description") or item.get("snippet") or "")).strip(),
-                "source": "Brave Search",
+                "snippet": strip_html(str(item.get("content") or item.get("snippet") or "")).strip(),
+                "source": "Tavily Search",
             }
         )
+    return results
+
+
+def _jina_results_from_text(text: str, limit: int = 6) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    current: Dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith("title:"):
+            if current.get("title") and current.get("url"):
+                results.append(_jina_result(current))
+                current = {}
+            current["title"] = line.split(":", 1)[1].strip()
+            continue
+        if lower.startswith("url source:") or lower.startswith("url:") or lower.startswith("source:"):
+            value = line.split(":", 1)[1].strip()
+            if value.startswith("http"):
+                current["url"] = value
+            continue
+        if lower.startswith("description:") or lower.startswith("content:") or lower.startswith("snippet:"):
+            current["snippet"] = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("http") and "url" not in current:
+            current["url"] = line
+            continue
+        if current.get("title") and "snippet" not in current and not line.startswith("#"):
+            current["snippet"] = line
+    if current.get("title") and current.get("url"):
+        results.append(_jina_result(current))
+    if not results:
+        results = _jina_markdown_link_results(text)
+    return results[:limit]
+
+
+def _jina_result(value: Dict[str, str]) -> Dict[str, str]:
+    return {
+        "title": strip_html(value.get("title", "")).strip(),
+        "url": value.get("url", "").strip(),
+        "snippet": strip_html(value.get("snippet", "")).strip(),
+        "source": "Jina Search",
+    }
+
+
+def _jina_markdown_link_results(text: str) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)]+)\)", text):
+        results.append({"title": strip_html(title), "url": url, "snippet": "", "source": "Jina Search"})
     return results
 
 

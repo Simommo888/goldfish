@@ -367,8 +367,9 @@ Built-in information-retrieval skills:
 - `retrieval-planning`: turn a vague research goal into a bounded tool plan.
 - `query-expansion`: generate broad, narrow, source-specific, and local-search queries.
 - `web-research`: collect public web evidence without login, cookies, or anti-scraping bypass.
-- `internet-search`: choose Brave or DuckDuckGo for public web retrieval.
-- `brave-search`: use Brave Search API when `BRAVE_SEARCH_API_KEY` is configured.
+- `internet-search`: choose Tavily, Jina, or DuckDuckGo for public web retrieval.
+- `tavily-search`: use Tavily Search API when `TAVILY_API_KEY` is configured.
+- `jina-search`: use Jina Search when `JINA_API_KEY` is configured.
 - `source-evaluation`: judge source reliability, priority, freshness, and failure risk.
 - `evidence-capture`: preserve claim-level evidence records with URLs and confidence.
 - `fact-checking`: mark claims as verified, uncertain, unsupported, or out of scope.
@@ -455,32 +456,35 @@ goldfish search "RAG 璇勬祴"
 goldfish research "MCP server best practices"
 goldfish research "AI coding commercialization" --limit 8 --fetch-limit 5
 goldfish research "RAG evaluation methods" --no-llm
-goldfish research "MCP server commercial opportunities" --search-provider brave
+goldfish research "MCP server commercial opportunities" --search-provider tavily
+goldfish research "AI coding agent market" --search-provider jina
 ```
 
 鑱婂ぉ妯″紡閲屼篃鍙互浣跨敤锛?
 ```text
 /research MCP server best practices
-/research MCP server commercial opportunities --search-provider brave
+/research MCP server commercial opportunities --search-provider tavily
 ```
 
 Search providers:
 
-- `auto`: tries Brave when `BRAVE_SEARCH_API_KEY` exists, then DuckDuckGo fallback.
-- `brave`: uses Brave Search API. Configure `BRAVE_SEARCH_API_KEY`; optional `BRAVE_SEARCH_ENDPOINT`.
+- `auto`: tries Tavily when `TAVILY_API_KEY` exists, then Jina when `JINA_API_KEY` exists, then DuckDuckGo fallback.
+- `tavily`: uses Tavily Search API. Configure `TAVILY_API_KEY`; optional `TAVILY_SEARCH_ENDPOINT`.
+- `jina`: uses Jina Search. Configure `JINA_API_KEY`; optional `JINA_SEARCH_ENDPOINT`.
 - `duckduckgo`: no-key public HTML fallback.
 
 Default provider can be set with:
 
 ```powershell
-$env:GOLDFISH_SEARCH_PROVIDER="brave"
+$env:GOLDFISH_SEARCH_PROVIDER="tavily"
 ```
 
 Related skills:
 
 ```powershell
 goldfish skills internet-search
-goldfish skills brave-search
+goldfish skills tavily-search
+goldfish skills jina-search
 ```
 
 杈撳嚭榛樿淇濆瓨鍒帮細

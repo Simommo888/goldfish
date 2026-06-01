@@ -1,31 +1,47 @@
 {
-  "version": 2,
+  "version": 3,
   "default_provider": "auto",
   "notes": [
     "No API key is stored here. Configure keys with environment variables only.",
-    "auto tries Brave when BRAVE_SEARCH_API_KEY exists, then DuckDuckGo HTML fallback.",
+    "auto tries Tavily when TAVILY_API_KEY exists, then Jina when JINA_API_KEY exists, then DuckDuckGo HTML fallback.",
     "All providers are for public web search only. Do not log in, store cookies, or bypass anti-scraping controls."
   ],
   "providers": [
     {
-      "name": "brave",
+      "name": "tavily",
       "enabled": true,
-      "display_name": "Brave Search API",
+      "display_name": "Tavily Search API",
       "env": {
-        "api_key": "BRAVE_SEARCH_API_KEY",
-        "endpoint": "BRAVE_SEARCH_ENDPOINT"
-      },
-      "fallback_env": {
-        "api_key": "BRAVE_API_KEY"
+        "api_key": "TAVILY_API_KEY",
+        "endpoint": "TAVILY_SEARCH_ENDPOINT"
       },
       "best_for": [
-        "current web research",
-        "market scans",
-        "AI product and startup discovery",
-        "Agent and RAG source discovery",
-        "broad English queries"
+        "agentic web research",
+        "AI market scans",
+        "startup and product discovery",
+        "current topic investigation",
+        "research tasks that need concise snippets"
       ],
-      "notes": "Recommended default paid provider for goldfish. Default endpoint is https://api.search.brave.com/res/v1/web/search."
+      "notes": "Recommended primary provider for goldfish. Default endpoint is https://api.tavily.com/search."
+    },
+    {
+      "name": "jina",
+      "enabled": true,
+      "display_name": "Jina Search",
+      "env": {
+        "api_key": "JINA_API_KEY",
+        "endpoint": "JINA_SEARCH_ENDPOINT"
+      },
+      "fallback_env": {
+        "api_key": "JINA_SEARCH_API_KEY"
+      },
+      "best_for": [
+        "LLM-readable search output",
+        "web-to-text research",
+        "source discovery",
+        "backup search provider"
+      ],
+      "notes": "Uses s.jina.ai search. Free API keys may be used; no key is written to config."
     },
     {
       "name": "duckduckgo",

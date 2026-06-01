@@ -163,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--limit", type=int, default=6, help="How many search results to collect")
     research_parser.add_argument("--fetch-limit", type=int, default=4, help="How many result pages to fetch")
     research_parser.add_argument("--timeout", type=int, default=12, help="Network timeout in seconds")
-    research_parser.add_argument("--search-provider", choices=["auto", "brave", "duckduckgo"], help="Public search provider")
+    research_parser.add_argument("--search-provider", choices=["auto", "tavily", "jina", "duckduckgo"], help="Public search provider")
     research_parser.add_argument("--no-llm", action="store_true", help="Disable LLM synthesis")
     research_parser.add_argument("--no-save", action="store_true", help="Do not save Markdown report")
     research_parser.set_defaults(func=lambda ns: command_tool("research_web", ns))
