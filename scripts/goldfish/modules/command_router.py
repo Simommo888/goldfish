@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from .intent_router import route_intent
+from .tool_planner import plan_tool
 from .tool_registry import DEFAULT_REGISTRY, ToolRegistry
 
 
@@ -125,6 +126,9 @@ class CommandRouter:
         return RoutedCommand("", {}, f"Unknown command: {command}", unknown=True)
 
     def _route_natural(self, text: str, defaults: Dict[str, Any]) -> RoutedCommand:
+        plan = plan_tool(text, self.registry.list_tools(), defaults)
+        if plan:
+            return RoutedCommand(plan.tool_name, plan.args, plan.response_hint)
         intent = route_intent(text, defaults)
         if intent:
             return RoutedCommand(intent.tool_name, intent.args, intent.response_hint)

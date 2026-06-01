@@ -693,7 +693,13 @@ help me research AI coding agent business opportunities
 
 Before planning, goldfish now runs a lightweight skill router over the goal. It can select relevant `scripts/goldfish/skills/*/SKILL.md` guidance for retrieval planning, internet search, web research, business ideas, draft writing, knowledge routing, trend analysis, fact checking, source evaluation, external CLI tools, and weekly review. Tool selection still has rule-based fallback, so it works without an LLM API key.
 
-Natural-language chat routing is config-driven. Edit `scripts/goldfish/config/tool_intents.json` to add or adjust ordinary-language intents without changing Python code. Each intent can define match rules, target tool, default args, and query cleanup. Slash commands such as `/web`, `/research`, and `/agent` remain explicit and stable.
+Natural-language chat routing has three layers:
+
+1. Slash commands such as `/web`, `/research`, and `/agent` remain explicit and stable.
+2. If an LLM API key is configured, `scripts/goldfish/modules/tool_planner.py` asks the model to choose one allow-listed `ToolRegistry` tool from the current tool descriptions and return strict JSON.
+3. If the model is unavailable, low-confidence, or returns an unsafe/unknown tool, goldfish falls back to `scripts/goldfish/config/tool_intents.json`.
+
+This means new ordinary phrasing usually does not require a new intent rule. Use `tool_intents.json` only for deterministic fallback behavior or high-priority local conventions.
 
 Task workspaces are saved under:
 

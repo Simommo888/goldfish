@@ -28,6 +28,7 @@ from modules.skill_router import select_skills
 from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
+from modules.tool_planner import plan_tool, validate_tool_plan
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
 from modules.web_researcher import _gdelt_results_from_payload, _hackernews_results_from_payload, _jina_results_from_text, _search_provider_order, _tavily_results_from_payload
 
@@ -174,6 +175,50 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertIsNotNone(routed)
         self.assertEqual(routed.tool_name, "web_search")
         self.assertEqual(routed.args["search_provider"], "news")
+
+    def test_tool_planner_validates_model_tool_choice(self):
+        tools = [
+            {"name": "web_search", "description": "Search public web", "mutating": True},
+            {"name": "search", "description": "Search local notes", "mutating": False},
+        ]
+        plan = validate_tool_plan(
+            {
+                "tool": "web_search",
+                "args": {"query": "OpenAI latest news today", "limit": 5, "unsafe": "ignored"},
+                "confidence": 0.9,
+                "reason": "Needs current public information.",
+            },
+            "OpenAI latest news today",
+            tools,
+        )
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.tool_name, "web_search")
+        self.assertEqual(plan.args["search_provider"], "news")
+        self.assertNotIn("unsafe", plan.args)
+        chinese_plan = validate_tool_plan(
+            {"tool": "web_search", "args": {"query": "AI"}, "confidence": 0.9},
+            "\u8bf7\u544a\u8bc9\u6211\u4eca\u5929\u53d1\u751f\u7684AI\u5927\u4e8b",
+            tools,
+        )
+        self.assertIsNotNone(chinese_plan)
+        self.assertEqual(chinese_plan.args["search_provider"], "news")
+
+    def test_tool_planner_uses_provider_and_low_confidence_fallback(self):
+        class FakeProvider:
+            def generate_json(self, messages, temperature=0.2):
+                return {
+                    "tool": "search",
+                    "args": {"query": "MCP"},
+                    "confidence": 0.8,
+                    "reason": "Local lookup requested.",
+                }
+
+        tools = [{"name": "search", "description": "Search local notes", "mutating": False}]
+        plan = plan_tool("search previous MCP notes", tools, provider=FakeProvider())
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.tool_name, "search")
+        low = validate_tool_plan({"tool": "search", "args": {"query": "MCP"}, "confidence": 0.1}, "MCP", tools)
+        self.assertIsNone(low)
 
     def test_command_router_routes_agent(self):
         routed = CommandRouter().route('/agent research MCP business opportunities --max-steps 3 --no-llm', {"no_llm": True})
