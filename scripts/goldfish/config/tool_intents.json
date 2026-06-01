@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "notes": [
+    "Natural-language intent routing for goldfish.",
+    "Slash commands remain explicit in code. This file controls ordinary chat text.",
+    "Rules are matched by priority. No API keys or secrets belong here."
+  ],
+  "intents": [
+    {
+      "name": "config_check",
+      "enabled": true,
+      "priority": 100,
+      "tool": "config_check",
+      "response_hint": "Config check:",
+      "match": {
+        "any": ["config check", "检查配置", "配置检查"]
+      }
+    },
+    {
+      "name": "doctor",
+      "enabled": true,
+      "priority": 100,
+      "tool": "doctor",
+      "response_hint": "Doctor report:",
+      "match": {
+        "any": ["doctor", "诊断", "体检", "检查运行状态"]
+      }
+    },
+    {
+      "name": "memory_show",
+      "enabled": true,
+      "priority": 90,
+      "tool": "memory_show",
+      "response_hint": "Agent memory:",
+      "match": {
+        "any": ["memory", "记忆", "记住了什么"]
+      }
+    },
+    {
+      "name": "feedback_list",
+      "enabled": true,
+      "priority": 90,
+      "tool": "feedback_list",
+      "response_hint": "Feedback records:",
+      "match": {
+        "any": ["feedback", "反馈记录"]
+      }
+    },
+    {
+      "name": "history",
+      "enabled": true,
+      "priority": 90,
+      "tool": "history",
+      "response_hint": "Recent runs:",
+      "match": {
+        "any": ["history", "历史记录", "最近运行"]
+      }
+    },
+    {
+      "name": "public_realtime_news",
+      "enabled": true,
+      "priority": 85,
+      "tool": "web_search",
+      "response_hint": "Web search results:",
+      "query_from_message": true,
+      "args": {
+        "search_provider": "news"
+      },
+      "query_cleanup": [
+        "web search",
+        "internet search",
+        "online search",
+        "search web",
+        "search the web",
+        "latest news",
+        "today news",
+        "联网搜索",
+        "全网搜索",
+        "网页搜索",
+        "搜索网页",
+        "最新消息",
+        "实时消息",
+        "最新新闻",
+        "今天新闻",
+        "今日新闻",
+        "今天发生的",
+        "今日发生的",
+        "请告诉我",
+        "告诉我"
+      ],
+      "match": {
+        "any": [
+          "web search",
+          "internet search",
+          "online search",
+          "search web",
+          "latest news",
+          "today news",
+          "联网搜索",
+          "全网搜索",
+          "网页搜索",
+          "搜索网页",
+          "最新消息",
+          "实时消息",
+          "最新新闻",
+          "今天新闻",
+          "今日新闻"
+        ],
+        "all_any": [
+          ["ai", "人工智能", "大模型", "llm"],
+          ["today", "latest", "今天", "今日", "刚刚", "实时", "最新"],
+          ["news", "event", "events", "新闻", "消息", "大事", "动态", "事件", "发生"]
+        ]
+      }
+    },
+    {
+      "name": "agent_research_or_deposition",
+      "enabled": true,
+      "priority": 70,
+      "tool": "agent",
+      "response_hint": "Agent loop completed:",
+      "goal_from_message": true,
+      "match": {
+        "any": [
+          "research",
+          "investigate",
+          "study",
+          "market",
+          "opportunity",
+          "trend",
+          "mcp",
+          "rag",
+          "ai coding",
+          "business idea",
+          "startup",
+          "mvp",
+          "pricing",
+          "monetization",
+          "prompt",
+          "permanent note",
+          "draft",
+          "source quality",
+          "fact check",
+          "knowledge base",
+          "skill",
+          "研究",
+          "商业机会",
+          "趋势",
+          "商业想法",
+          "创业",
+          "变现",
+          "永久笔记",
+          "提示词",
+          "草稿",
+          "知识库",
+          "沉淀",
+          "信源",
+          "来源",
+          "核验"
+        ]
+      }
+    },
+    {
+      "name": "local_search",
+      "enabled": true,
+      "priority": 60,
+      "tool": "search",
+      "response_hint": "Local search results:",
+      "query_from_message": true,
+      "query_cleanup": ["search", "本地搜索", "搜索本地", "查历史", "查笔记"],
+      "match": {
+        "any": ["search", "本地搜索", "搜索本地", "查历史", "查笔记"]
+      }
+    },
+    {
+      "name": "skills",
+      "enabled": true,
+      "priority": 50,
+      "tool": "skills",
+      "response_hint": "Skills:",
+      "match": {
+        "any": ["skills", "技能"]
+      }
+    },
+    {
+      "name": "source_health",
+      "enabled": true,
+      "priority": 50,
+      "tool": "source_health",
+      "response_hint": "Source health:",
+      "match": {
+        "any": ["source health", "sources health", "来源健康", "信源健康"]
+      }
+    },
+    {
+      "name": "tools",
+      "enabled": true,
+      "priority": 40,
+      "tool": "tools",
+      "response_hint": "Available tools:",
+      "match": {
+        "any": ["tools", "工具列表", "有哪些工具"]
+      }
+    },
+    {
+      "name": "external_cli_tools",
+      "enabled": true,
+      "priority": 40,
+      "tool": "external_cli",
+      "response_hint": "External CLI tools:",
+      "args": {
+        "action": "list"
+      },
+      "match": {
+        "any": ["external cli", "external tools", "cli tools", "外部工具", "命令行工具"]
+      }
+    },
+    {
+      "name": "weekly",
+      "enabled": true,
+      "priority": 30,
+      "tool": "weekly",
+      "response_hint": "Weekly run completed:",
+      "match": {
+        "any": ["weekly", "每周", "周报"]
+      }
+    },
+    {
+      "name": "dry_run",
+      "enabled": true,
+      "priority": 30,
+      "tool": "dry_run",
+      "response_hint": "Dry-run completed:",
+      "match": {
+        "any": ["dry-run", "dry run", "test run", "试运行"]
+      }
+    },
+    {
+      "name": "daily_report",
+      "enabled": true,
+      "priority": 20,
+      "tool": "run_daily",
+      "response_hint": "Daily run completed:",
+      "match": {
+        "any": ["daily", "briefing", "report", "run", "日报", "简报", "运行日报"]
+      },
+      "set_flags_when_any": [
+        {
+          "keywords": ["draft", "drafts", "草稿"],
+          "args": {"write_drafts": true}
+        }
+      ]
+    }
+  ]
+}

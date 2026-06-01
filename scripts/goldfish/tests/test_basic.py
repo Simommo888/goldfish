@@ -17,6 +17,7 @@ from modules.command_router import CommandRouter
 from modules.config_loader import load_config
 from modules.external_cli import list_external_tools, run_external_tool
 from modules.insight_extractor import extract_insights
+from modules.intent_router import route_intent
 from modules.model_setup import configure_environment, find_profile, redact_secret_text
 from modules.providers.registry import resolve_llm_connection
 from modules.report_generator import generate_daily_report
@@ -161,6 +162,18 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(routed.tool_name, "web_search")
         self.assertIn("MCP servers", routed.args["query"])
         self.assertEqual(routed.args["limit"], 3)
+
+    def test_command_router_routes_chinese_today_ai_news_to_web_search(self):
+        routed = CommandRouter().route("请告诉我今天发生的AI大事", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "web_search")
+        self.assertEqual(routed.args["search_provider"], "news")
+        self.assertIn("AI大事", routed.args["query"])
+
+    def test_intent_router_uses_config_for_chinese_today_ai_news(self):
+        routed = route_intent("请告诉我今天发生的AI大事", {"no_llm": True})
+        self.assertIsNotNone(routed)
+        self.assertEqual(routed.tool_name, "web_search")
+        self.assertEqual(routed.args["search_provider"], "news")
 
     def test_command_router_routes_agent(self):
         routed = CommandRouter().route('/agent research MCP business opportunities --max-steps 3 --no-llm', {"no_llm": True})

@@ -7,6 +7,7 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from .intent_router import route_intent
 from .tool_registry import DEFAULT_REGISTRY, ToolRegistry
 
 
@@ -124,89 +125,9 @@ class CommandRouter:
         return RoutedCommand("", {}, f"Unknown command: {command}", unknown=True)
 
     def _route_natural(self, text: str, defaults: Dict[str, Any]) -> RoutedCommand:
-        args = dict(defaults)
-        lowered = text.lower()
-        wants_dry_run = any(word in lowered for word in ["dry-run", "dry run", "test run"])
-        wants_weekly = "weekly" in lowered
-        wants_report = any(word in lowered for word in ["daily", "briefing", "report", "run"])
-        wants_drafts = any(word in lowered for word in ["draft", "drafts"])
-
-        if "config check" in lowered:
-            return RoutedCommand("config_check", {}, "Config check:")
-        if "doctor" in lowered:
-            return RoutedCommand("doctor", {}, "Doctor report:")
-        if "memory" in lowered:
-            return RoutedCommand("memory_show", {}, "Agent memory:")
-        if "feedback" in lowered:
-            return RoutedCommand("feedback_list", {}, "Feedback records:")
-        if "history" in lowered:
-            return RoutedCommand("history", {}, "Recent runs:")
-        if any(word in lowered for word in ["web search", "internet search", "online search", "search web", "latest news", "today news", "联网搜索", "全网搜索", "网页搜索", "搜索网页", "最新消息", "实时消息", "最新新闻", "今天新闻"]):
-            query = _strip_web_search_intent(text)
-            provider = "news" if any(word in lowered for word in ["latest", "today", "news", "最新", "实时", "今天", "新闻", "消息"]) else None
-            if provider:
-                args["search_provider"] = provider
-            return RoutedCommand("web_search", {**args, "query": query}, "Web search results:")
-        if any(
-            word in lowered
-            for word in [
-                "research",
-                "investigate",
-                "study",
-                "market",
-                "opportunity",
-                "trend",
-                "mcp",
-                "rag",
-                "ai coding",
-                "business idea",
-                "startup",
-                "mvp",
-                "pricing",
-                "monetization",
-                "prompt",
-                "permanent note",
-                "draft",
-                "source quality",
-                "fact check",
-                "knowledge base",
-                "skill",
-                "研究",
-                "商业机会",
-                "趋势",
-                "商业想法",
-                "创业",
-                "变现",
-                "永久笔记",
-                "提示词",
-                "草稿",
-                "知识库",
-                "沉淀",
-                "信源",
-                "来源",
-                "核验",
-            ]
-        ):
-            return RoutedCommand("agent", {**args, "goal": text}, "Agent loop completed:")
-        if "search" in lowered:
-            query = text.replace("search", "", 1).strip()
-            return RoutedCommand("search", {"query": query}, "Local search results:")
-        if "skills" in lowered:
-            return RoutedCommand("skills", {}, "Skills:")
-        if any(word in lowered for word in ["source health", "sources health"]):
-            return RoutedCommand("source_health", {}, "Source health:")
-        if "tools" in lowered:
-            return RoutedCommand("tools", {}, "Available tools:")
-        if any(word in lowered for word in ["external cli", "external tools", "cli tools"]):
-            return RoutedCommand("external_cli", {"action": "list"}, "External CLI tools:")
-        if wants_weekly:
-            return RoutedCommand("weekly", args, "Weekly run completed:")
-        if wants_dry_run:
-            return RoutedCommand("dry_run", args, "Dry-run completed:")
-        if wants_report:
-            if wants_drafts:
-                args["write_drafts"] = True
-            return RoutedCommand("run_daily", args, "Daily run completed:")
+        intent = route_intent(text, defaults)
+        if intent:
+            return RoutedCommand(intent.tool_name, intent.args, intent.response_hint)
         return RoutedCommand("", {}, "", unknown=True)
 
 
@@ -266,30 +187,6 @@ def _parse_key_values(parts: list[str]) -> Dict[str, Any]:
     if rest:
         values["query"] = " ".join(rest).strip()
     return values
-
-
-def _strip_web_search_intent(text: str) -> str:
-    query = text
-    for marker in [
-        "web search",
-        "internet search",
-        "online search",
-        "search web",
-        "search the web",
-        "latest news",
-        "today news",
-        "联网搜索",
-        "全网搜索",
-        "网页搜索",
-        "搜索网页",
-        "最新消息",
-        "实时消息",
-        "最新新闻",
-        "今天新闻",
-    ]:
-        query = query.replace(marker, "")
-        query = query.replace(marker.title(), "")
-    return query.strip(" ：:，,") or text.strip()
 
 
 HELP_TEXT = """goldfish commands:

@@ -453,6 +453,7 @@ def _config_file_status() -> Dict[str, bool]:
         "agent_profile.json",
         "external_tools.json",
         "search_providers.json",
+        "tool_intents.json",
     ]
     status: Dict[str, bool] = {}
     for name in names:
