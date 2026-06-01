@@ -26,6 +26,9 @@ Use this skill for public internet research, market scans, product comparisons, 
    - `auto` by default.
    - `tavily` when Tavily credentials are available and agentic search quality matters.
    - `jina` when LLM-readable search output or backup retrieval is useful.
+   - `news` for latest/today/realtime news queries.
+   - `hackernews` for no-key developer news.
+   - `gdelt` for no-key global news fallback.
    - `duckduckgo` as the no-key fallback.
 4. Fetch only accessible pages.
 5. Extract title, URL, date, publisher, core claim, and useful quotes or paraphrases.
@@ -38,6 +41,9 @@ Use this skill for public internet research, market scans, product comparisons, 
 ```powershell
 goldfish research "MCP server commercial opportunities" --search-provider auto
 goldfish research "MCP server commercial opportunities" --search-provider tavily
+goldfish web "OpenAI latest news today" --search-provider news
+goldfish web "AI agent latest" --search-provider hackernews
+goldfish web "OpenAI latest" --search-provider gdelt
 goldfish research "AI coding agent market" --search-provider jina
 goldfish research "AI coding agent market" --search-provider duckduckgo
 ```

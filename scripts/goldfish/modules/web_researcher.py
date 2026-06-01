@@ -18,13 +18,15 @@ from urllib.request import Request, urlopen
 
 from .providers.registry import get_provider, resolve_llm_connection
 from .storage import save_markdown
-from .utils import USER_AGENT, fetch_url, kb_root, now, safe_filename, strip_html, today_string, truncate
+from .utils import USER_AGENT, fetch_url, get_env, kb_root, now, safe_filename, strip_html, today_string, truncate
 
 
 SEARCH_URLS = [
     "https://lite.duckduckgo.com/lite/?q={query}",
     "https://duckduckgo.com/html/?q={query}",
 ]
+GDELT_DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+HACKERNEWS_SEARCH_URL = "https://hn.algolia.com/api/v1/search_by_date"
 MAX_PAGE_CHARS = 6000
 
 
@@ -36,6 +38,7 @@ def research_public_web(
     use_llm: bool = True,
     save: bool = True,
     search_provider: str | None = None,
+    timespan: str | None = None,
     root: Path | None = None,
 ) -> Dict[str, Any]:
     root = root or kb_root()
@@ -43,7 +46,7 @@ def research_public_web(
     if not query:
         return {"query": query, "error": "query is required", "results": [], "pages": []}
 
-    search_results = search_public_web(query, limit=limit, timeout=timeout, provider=search_provider)
+    search_results = search_public_web(query, limit=limit, timeout=timeout, provider=search_provider, timespan=timespan)
     pages = fetch_research_pages(search_results[:fetch_limit], timeout=timeout)
     synthesis = synthesize_research(query, search_results, pages, use_llm=use_llm)
     markdown = generate_research_markdown(query, search_results, pages, synthesis)
@@ -64,17 +67,31 @@ def research_public_web(
     }
 
 
-def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: str | None = None) -> List[Dict[str, Any]]:
+def search_public_web(
+    query: str,
+    limit: int = 6,
+    timeout: int = 12,
+    provider: str | None = None,
+    timespan: str | None = None,
+) -> List[Dict[str, Any]]:
     errors = []
+    attempted = []
     for search_provider in _search_provider_order(provider):
+        attempted.append(search_provider)
         try:
             if search_provider == "tavily":
                 results = search_tavily_web(query, limit=limit, timeout=timeout)
             elif search_provider == "jina":
                 results = search_jina_web(query, limit=limit, timeout=timeout)
+            elif search_provider == "hackernews":
+                results = search_hackernews_web(query, limit=limit, timeout=timeout)
+            elif search_provider == "gdelt":
+                results = search_gdelt_news(query, limit=limit, timeout=timeout, timespan=timespan)
             else:
                 results = search_duckduckgo_html(query, limit=limit, timeout=timeout)
             if results:
+                for result in results:
+                    result.setdefault("provider_order", " -> ".join(attempted))
                 return results
             errors.append(f"{search_provider}: no results")
         except Exception as exc:
@@ -93,8 +110,8 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: s
 
 
 def search_tavily_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
-    api_key = os.environ.get("TAVILY_API_KEY")
-    endpoint = os.environ.get("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search").rstrip("/")
+    api_key = get_env("TAVILY_API_KEY")
+    endpoint = get_env("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search").rstrip("/")
     if not api_key:
         raise RuntimeError("missing TAVILY_API_KEY")
     payload = _post_json(
@@ -113,13 +130,33 @@ def search_tavily_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dic
 
 
 def search_jina_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
-    api_key = os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY")
-    endpoint = os.environ.get("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/").rstrip("/")
+    api_key = get_env("JINA_API_KEY") or get_env("JINA_SEARCH_API_KEY")
+    endpoint = get_env("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/").rstrip("/")
     if not api_key:
         raise RuntimeError("missing JINA_API_KEY")
     url = endpoint + "?" + urllib.parse.urlencode({"q": query})
     text = _fetch_text(url, timeout=timeout, headers={"Authorization": f"Bearer {api_key}", "Accept": "text/plain"})
     return _jina_results_from_text(text, limit=limit)
+
+
+def search_hackernews_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    url = HACKERNEWS_SEARCH_URL + "?" + urllib.parse.urlencode({"query": query, "tags": "story", "hitsPerPage": max(1, min(limit, 50))})
+    payload = _fetch_json(url, timeout=timeout, headers={"Accept": "application/json"})
+    return _hackernews_results_from_payload(payload, limit=limit)
+
+
+def search_gdelt_news(query: str, limit: int = 6, timeout: int = 12, timespan: str | None = None) -> List[Dict[str, Any]]:
+    params = {
+        "query": query,
+        "mode": "artlist",
+        "format": "json",
+        "maxrecords": max(1, min(limit, 50)),
+    }
+    if timespan:
+        params["timespan"] = timespan
+    url = GDELT_DOC_API_URL + "?" + urllib.parse.urlencode(params)
+    payload = _fetch_json(url, timeout=timeout, headers={"Accept": "application/json"})
+    return _gdelt_results_from_payload(payload, limit=limit)
 
 
 def search_duckduckgo_html(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
@@ -347,27 +384,46 @@ class DuckDuckGoHTMLParser(HTMLParser):
 
 
 def _search_provider_order(provider: str | None = None) -> List[str]:
-    requested = (provider or os.environ.get("GOLDFISH_SEARCH_PROVIDER") or "auto").strip().lower()
+    requested = (provider or get_env("GOLDFISH_SEARCH_PROVIDER", "auto") or "auto").strip().lower()
     aliases = {
         "tavily-search": "tavily",
         "tavily_web": "tavily",
         "jina-search": "jina",
         "jina_web": "jina",
+        "hn": "hackernews",
+        "hacker-news": "hackernews",
+        "algolia": "hackernews",
+        "news": "news",
+        "latest": "news",
+        "realtime": "news",
+        "real-time": "news",
         "ddg": "duckduckgo",
         "duck": "duckduckgo",
         "duckduckgo-html": "duckduckgo",
+        "gdelt-doc": "gdelt",
     }
     requested = aliases.get(requested, requested)
-    if requested in {"tavily", "jina", "duckduckgo"}:
+    if requested == "news":
+        order: List[str] = []
+        if get_env("TAVILY_API_KEY"):
+            order.append("tavily")
+        if get_env("JINA_API_KEY") or get_env("JINA_SEARCH_API_KEY"):
+            order.append("jina")
+        return [*order, "hackernews", "gdelt", "duckduckgo"]
+    if requested in {"tavily", "jina", "hackernews", "gdelt", "duckduckgo"}:
         if requested == "tavily":
-            return ["tavily", "jina", "duckduckgo"]
+            return ["tavily", "jina", "hackernews", "gdelt", "duckduckgo"]
         if requested == "jina":
-            return ["jina", "duckduckgo"]
+            return ["jina", "hackernews", "gdelt", "duckduckgo"]
+        if requested == "hackernews":
+            return ["hackernews", "gdelt", "duckduckgo"]
+        if requested == "gdelt":
+            return ["gdelt", "hackernews", "duckduckgo"]
         return ["duckduckgo"]
     order: List[str] = []
-    if os.environ.get("TAVILY_API_KEY"):
+    if get_env("TAVILY_API_KEY"):
         order.append("tavily")
-    if os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY"):
+    if get_env("JINA_API_KEY") or get_env("JINA_SEARCH_API_KEY"):
         order.append("jina")
     order.append("duckduckgo")
     return order
@@ -469,6 +525,66 @@ def _jina_markdown_link_results(text: str) -> List[Dict[str, str]]:
     results: List[Dict[str, str]] = []
     for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)]+)\)", text):
         results.append({"title": strip_html(title), "url": url, "snippet": "", "source": "Jina Search"})
+    return results
+
+
+def _hackernews_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for hit in payload.get("hits", []):
+        title = str(hit.get("title") or hit.get("story_title") or "").strip()
+        url = str(hit.get("url") or "").strip()
+        object_id = str(hit.get("objectID") or hit.get("story_id") or "").strip()
+        if not url and object_id:
+            url = f"https://news.ycombinator.com/item?id={object_id}"
+        if not title or not url:
+            continue
+        created_at = str(hit.get("created_at") or "").strip()
+        points = hit.get("points")
+        comments = hit.get("num_comments")
+        snippet_parts = []
+        if created_at:
+            snippet_parts.append(f"published: {created_at}")
+        if points is not None:
+            snippet_parts.append(f"points: {points}")
+        if comments is not None:
+            snippet_parts.append(f"comments: {comments}")
+        results.append(
+            {
+                "title": strip_html(title),
+                "url": url,
+                "snippet": "; ".join(snippet_parts),
+                "source": "Hacker News Algolia",
+                "published": created_at,
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _gdelt_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for article in payload.get("articles", []):
+        title = str(article.get("title") or "").strip()
+        url = str(article.get("url") or "").strip()
+        if not title or not url:
+            continue
+        domain = str(article.get("domain") or "").strip()
+        seendate = str(article.get("seendate") or "").strip()
+        country = str(article.get("sourcecountry") or "").strip()
+        language = str(article.get("language") or "").strip()
+        snippet = "; ".join(part for part in [domain, language, country, seendate] if part)
+        results.append(
+            {
+                "title": strip_html(title),
+                "url": url,
+                "snippet": snippet,
+                "source": "GDELT DOC API",
+                "published": seendate,
+            }
+        )
+        if len(results) >= limit:
+            break
     return results
 
 

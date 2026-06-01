@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from typing import Any, Dict, List
 
 from modules.conversation_agent import run_chat
@@ -48,8 +50,27 @@ def _namespace_to_payload(namespace: argparse.Namespace, force: Dict[str, Any] |
 
 
 def _print_json(payload: Dict[str, Any]) -> int:
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    _print_text(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
+
+
+def _print_text(text: str) -> None:
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        print(safe)
+
+
+def _prefer_utf8_stdout() -> None:
+    if not os.getenv("GOLDFISH_FORCE_UTF8_STDOUT"):
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def command_run(namespace: argparse.Namespace) -> int:
@@ -162,7 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("query", help="Public web search query")
     web_parser.add_argument("--limit", type=int, default=8, help="How many search results to collect")
     web_parser.add_argument("--timeout", type=int, default=12, help="Network timeout in seconds")
-    web_parser.add_argument("--search-provider", choices=["auto", "tavily", "jina", "duckduckgo"], help="Public search provider")
+    web_parser.add_argument("--search-provider", choices=["auto", "news", "tavily", "jina", "hackernews", "gdelt", "duckduckgo"], help="Public search provider")
+    web_parser.add_argument("--timespan", help="Optional news provider window, e.g. 24h or 7d")
     web_parser.set_defaults(func=lambda ns: command_tool("web_search", ns))
 
     research_parser = subparsers.add_parser("research", help="Search public web and save a research report")
@@ -170,7 +192,8 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--limit", type=int, default=6, help="How many search results to collect")
     research_parser.add_argument("--fetch-limit", type=int, default=4, help="How many result pages to fetch")
     research_parser.add_argument("--timeout", type=int, default=12, help="Network timeout in seconds")
-    research_parser.add_argument("--search-provider", choices=["auto", "tavily", "jina", "duckduckgo"], help="Public search provider")
+    research_parser.add_argument("--search-provider", choices=["auto", "news", "tavily", "jina", "hackernews", "gdelt", "duckduckgo"], help="Public search provider")
+    research_parser.add_argument("--timespan", help="Optional news provider window, e.g. 24h or 7d")
     research_parser.add_argument("--no-llm", action="store_true", help="Disable LLM synthesis")
     research_parser.add_argument("--no-save", action="store_true", help="Do not save Markdown report")
     research_parser.set_defaults(func=lambda ns: command_tool("web_search", ns), mode="research")
@@ -227,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: List[str] | None = None) -> int:
+    _prefer_utf8_stdout()
     parser = build_parser()
     namespace = parser.parse_args(argv)
     if not hasattr(namespace, "func"):

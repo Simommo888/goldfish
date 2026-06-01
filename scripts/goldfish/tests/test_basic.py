@@ -28,7 +28,7 @@ from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
-from modules.web_researcher import _jina_results_from_text, _search_provider_order, _tavily_results_from_payload
+from modules.web_researcher import _gdelt_results_from_payload, _hackernews_results_from_payload, _jina_results_from_text, _search_provider_order, _tavily_results_from_payload
 
 
 def _restore_env(name: str, value: str | None) -> None:
@@ -289,7 +289,9 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         old_tavily = os.environ.get("TAVILY_API_KEY")
         old_jina = os.environ.get("JINA_API_KEY")
         old_provider = os.environ.get("GOLDFISH_SEARCH_PROVIDER")
+        old_ignore = os.environ.get("GOLDFISH_IGNORE_USER_ENV")
         try:
+            os.environ["GOLDFISH_IGNORE_USER_ENV"] = "1"
             os.environ.pop("TAVILY_API_KEY", None)
             os.environ.pop("JINA_API_KEY", None)
             os.environ.pop("GOLDFISH_SEARCH_PROVIDER", None)
@@ -299,11 +301,13 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
             os.environ["TAVILY_API_KEY"] = "test-key"
             self.assertEqual(_search_provider_order()[0], "tavily")
             self.assertEqual(_search_provider_order("jina")[0], "jina")
+            self.assertEqual(_search_provider_order("news")[-3:], ["hackernews", "gdelt", "duckduckgo"])
             self.assertEqual(_search_provider_order("duckduckgo"), ["duckduckgo"])
         finally:
             _restore_env("TAVILY_API_KEY", old_tavily)
             _restore_env("JINA_API_KEY", old_jina)
             _restore_env("GOLDFISH_SEARCH_PROVIDER", old_provider)
+            _restore_env("GOLDFISH_IGNORE_USER_ENV", old_ignore)
 
     def test_tavily_and_jina_search_payload_parsers(self):
         tavily = _tavily_results_from_payload(
@@ -326,6 +330,37 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(tavily[0]["url"], "https://example.com/tavily")
         self.assertEqual(jina[0]["source"], "Jina Search")
         self.assertEqual(jina[0]["url"], "https://example.com/jina")
+
+    def test_no_key_realtime_search_payload_parsers(self):
+        hn = _hackernews_results_from_payload(
+            {
+                "hits": [
+                    {
+                        "title": "OpenAI realtime story",
+                        "url": "https://example.com/hn",
+                        "created_at": "2026-06-01T10:00:00Z",
+                        "points": 3,
+                        "num_comments": 2,
+                    }
+                ]
+            }
+        )
+        gdelt = _gdelt_results_from_payload(
+            {
+                "articles": [
+                    {
+                        "title": "OpenAI latest article",
+                        "url": "https://example.com/gdelt",
+                        "domain": "example.com",
+                        "seendate": "20260601T100000Z",
+                    }
+                ]
+            }
+        )
+        self.assertEqual(hn[0]["source"], "Hacker News Algolia")
+        self.assertEqual(hn[0]["url"], "https://example.com/hn")
+        self.assertEqual(gdelt[0]["source"], "GDELT DOC API")
+        self.assertEqual(gdelt[0]["published"], "20260601T100000Z")
 
     def test_source_health_records(self):
         sources = [{"name": "Example", "enabled": True}]
@@ -449,13 +484,16 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
 
     def test_setup_search_noninteractive_does_not_prompt_for_key(self):
         old_tavily = os.environ.get("TAVILY_API_KEY")
+        old_ignore = os.environ.get("GOLDFISH_IGNORE_USER_ENV")
         try:
+            os.environ["GOLDFISH_IGNORE_USER_ENV"] = "1"
             os.environ.pop("TAVILY_API_KEY", None)
             answer = SetupSession(interactive=False).handle("/search tavily")
             self.assertIn("requires `TAVILY_API_KEY`", answer)
             self.assertIn("goldfish setup", answer)
         finally:
             _restore_env("TAVILY_API_KEY", old_tavily)
+            _restore_env("GOLDFISH_IGNORE_USER_ENV", old_ignore)
 
     def test_search_provider_setup_helper_for_duckduckgo(self):
         profile = find_search_provider("duckduckgo")

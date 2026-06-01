@@ -141,8 +141,11 @@ class CommandRouter:
             return RoutedCommand("feedback_list", {}, "Feedback records:")
         if "history" in lowered:
             return RoutedCommand("history", {}, "Recent runs:")
-        if any(word in lowered for word in ["web search", "internet search", "online search", "search web", "联网搜索", "全网搜索", "网页搜索", "搜索网页"]):
+        if any(word in lowered for word in ["web search", "internet search", "online search", "search web", "latest news", "today news", "联网搜索", "全网搜索", "网页搜索", "搜索网页", "最新消息", "实时消息", "最新新闻", "今天新闻"]):
             query = _strip_web_search_intent(text)
+            provider = "news" if any(word in lowered for word in ["latest", "today", "news", "最新", "实时", "今天", "新闻", "消息"]) else None
+            if provider:
+                args["search_provider"] = provider
             return RoutedCommand("web_search", {**args, "query": query}, "Web search results:")
         if any(
             word in lowered
@@ -267,7 +270,23 @@ def _parse_key_values(parts: list[str]) -> Dict[str, Any]:
 
 def _strip_web_search_intent(text: str) -> str:
     query = text
-    for marker in ["web search", "internet search", "online search", "search web", "search the web", "联网搜索", "全网搜索", "网页搜索", "搜索网页"]:
+    for marker in [
+        "web search",
+        "internet search",
+        "online search",
+        "search web",
+        "search the web",
+        "latest news",
+        "today news",
+        "联网搜索",
+        "全网搜索",
+        "网页搜索",
+        "搜索网页",
+        "最新消息",
+        "实时消息",
+        "最新新闻",
+        "今天新闻",
+    ]:
         query = query.replace(marker, "")
         query = query.replace(marker.title(), "")
     return query.strip(" ：:，,") or text.strip()

@@ -17,7 +17,7 @@ from .providers.registry import resolve_llm_connection
 from .search_engine import search_goldfish
 from .skill_loader import list_skills, load_skill, skills_dir
 from .state_store import GoldfishState
-from .utils import agent_dir, kb_root
+from .utils import agent_dir, get_env, kb_root
 from .web_researcher import research_public_web, search_public_web
 
 
@@ -218,6 +218,9 @@ def _tool_web_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     limit = int(payload.get("limit", 8) or 8)
     timeout = int(payload.get("timeout", 12) or 12)
     provider = payload.get("search_provider") or payload.get("provider")
+    if not provider and _looks_time_sensitive_query(query):
+        provider = "news"
+    timespan = payload.get("timespan") or payload.get("time_span")
     if mode in {"research", "report", "deep"} or bool(payload.get("fetch_pages", False)):
         return {
             "status": "ok",
@@ -230,16 +233,18 @@ def _tool_web_search(payload: Dict[str, Any]) -> Dict[str, Any]:
                 use_llm=not bool(payload.get("no_llm", False)),
                 save=not bool(payload.get("no_save", False)),
                 search_provider=provider,
+                timespan=timespan,
                 root=kb_root(),
             ),
             "safety": _public_web_safety(),
         }
-    results = search_public_web(query, limit=limit, timeout=timeout, provider=provider)
+    results = search_public_web(query, limit=limit, timeout=timeout, provider=provider, timespan=timespan)
     return {
         "status": "ok",
         "mode": "search",
         "query": query,
         "provider": results[0].get("source", "") if results else "",
+        "provider_order": results[0].get("provider_order", "") if results else "",
         "count": len(results),
         "results": results,
         "safety": _public_web_safety(),
@@ -253,6 +258,27 @@ def _public_web_safety() -> Dict[str, bool]:
         "cookies_saved": False,
         "anti_scraping_bypass": False,
     }
+
+
+def _looks_time_sensitive_query(query: str) -> bool:
+    lowered = query.lower()
+    return any(
+        marker in lowered
+        for marker in [
+            "latest",
+            "today",
+            "breaking",
+            "real-time",
+            "realtime",
+            "news",
+            "刚刚",
+            "最新",
+            "实时",
+            "今天",
+            "新闻",
+            "消息",
+        ]
+    )
 
 
 def _tool_skills(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -444,15 +470,18 @@ def _config_file_status() -> Dict[str, bool]:
 
 def _search_provider_status() -> Dict[str, Any]:
     return {
-        "default": os.environ.get("GOLDFISH_SEARCH_PROVIDER", "auto"),
+        "default": get_env("GOLDFISH_SEARCH_PROVIDER", "auto"),
         "tavily": {
-            "configured": bool(os.environ.get("TAVILY_API_KEY")),
-            "endpoint": os.environ.get("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search"),
+            "configured": bool(get_env("TAVILY_API_KEY")),
+            "endpoint": get_env("TAVILY_SEARCH_ENDPOINT", "https://api.tavily.com/search"),
         },
         "jina": {
-            "configured": bool(os.environ.get("JINA_API_KEY") or os.environ.get("JINA_SEARCH_API_KEY")),
-            "endpoint": os.environ.get("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/"),
+            "configured": bool(get_env("JINA_API_KEY") or get_env("JINA_SEARCH_API_KEY")),
+            "endpoint": get_env("JINA_SEARCH_ENDPOINT", "https://s.jina.ai/"),
         },
+        "news": {"configured": True, "fallback": True, "notes": "Tavily/Jina when configured, then Hacker News Algolia, GDELT DOC, DuckDuckGo."},
+        "hackernews": {"configured": True, "fallback": True, "endpoint": "https://hn.algolia.com/api/v1/search_by_date"},
+        "gdelt": {"configured": True, "fallback": True, "endpoint": "https://api.gdeltproject.org/api/v2/doc/doc"},
         "duckduckgo": {"configured": True, "fallback": True},
     }
 

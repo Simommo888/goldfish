@@ -4,6 +4,7 @@
   "notes": [
     "No API key is stored here. Configure keys with environment variables only.",
     "auto tries Tavily when TAVILY_API_KEY exists, then Jina when JINA_API_KEY exists, then DuckDuckGo HTML fallback.",
+    "news mode is optimized for latest/realtime queries and tries Tavily/Jina when configured, then Hacker News Algolia, GDELT DOC, then DuckDuckGo.",
     "All providers are for public web search only. Do not log in, store cookies, or bypass anti-scraping controls."
   ],
   "providers": [
@@ -42,6 +43,43 @@
         "backup search provider"
       ],
       "notes": "Uses s.jina.ai search. Free API keys may be used; no key is written to config."
+    },
+    {
+      "name": "news",
+      "enabled": true,
+      "display_name": "Realtime News Chain",
+      "env": {},
+      "best_for": [
+        "latest AI news",
+        "today queries",
+        "real-time technical news",
+        "breaking topic discovery"
+      ],
+      "notes": "No key required by itself. Uses configured Tavily/Jina first, then no-key Hacker News Algolia and GDELT DOC API fallbacks."
+    },
+    {
+      "name": "hackernews",
+      "enabled": true,
+      "display_name": "Hacker News Algolia",
+      "env": {},
+      "best_for": [
+        "real-time technology links",
+        "developer discussion signals",
+        "latest AI engineering stories"
+      ],
+      "notes": "No key required. Uses Algolia's public Hacker News Search API ordered by date."
+    },
+    {
+      "name": "gdelt",
+      "enabled": true,
+      "display_name": "GDELT DOC API",
+      "env": {},
+      "best_for": [
+        "global news articles",
+        "public media monitoring",
+        "latest web news fallback"
+      ],
+      "notes": "No key required. Public API can rate-limit; failures fall back to other providers."
     },
     {
       "name": "duckduckgo",

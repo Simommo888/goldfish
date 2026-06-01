@@ -12,6 +12,7 @@ from . import cli_theme
 from .config_loader import load_config
 from .model_setup import configure_environment, find_profile, model_menu, prompt_for_api_key, set_user_environment_variable
 from .tool_registry import DEFAULT_REGISTRY
+from .utils import get_env
 
 
 @dataclass(frozen=True)
@@ -58,12 +59,39 @@ SEARCH_PROVIDER_PROFILES = (
         aliases=("2", "jina-search", "jina_ai"),
     ),
     SearchProviderProfile(
+        key="news",
+        label="Realtime News Chain",
+        env_key="",
+        endpoint_env_key="",
+        default_endpoint="",
+        aliases=("4", "latest", "realtime", "real-time", "news-search"),
+        requires_api_key=False,
+    ),
+    SearchProviderProfile(
+        key="hackernews",
+        label="Hacker News Algolia",
+        env_key="",
+        endpoint_env_key="",
+        default_endpoint="",
+        aliases=("5", "hn", "hacker-news", "algolia"),
+        requires_api_key=False,
+    ),
+    SearchProviderProfile(
+        key="gdelt",
+        label="GDELT DOC API",
+        env_key="",
+        endpoint_env_key="",
+        default_endpoint="",
+        aliases=("6", "gdelt-doc"),
+        requires_api_key=False,
+    ),
+    SearchProviderProfile(
         key="duckduckgo",
         label="DuckDuckGo HTML fallback",
         env_key="",
         endpoint_env_key="",
         default_endpoint="",
-        aliases=("3", "ddg", "duck"),
+        aliases=("3", "7", "ddg", "duck"),
         requires_api_key=False,
     ),
 )
@@ -184,7 +212,7 @@ class SetupSession:
             configured = configure_search_environment(profile, api_key="", endpoint="", persist_user=True)
             return _search_setup_result(configured)
 
-        existing = os.getenv(profile.env_key) or ""
+        existing = get_env(profile.env_key) or ""
         if not self.interactive:
             if existing:
                 configured = configure_search_environment(profile, api_key=existing, endpoint="", persist_user=True)
@@ -233,7 +261,7 @@ def _setup_result(configured: Dict[str, Any]) -> str:
 
 
 def search_provider_menu() -> str:
-    current = os.getenv("GOLDFISH_SEARCH_PROVIDER", "auto")
+    current = get_env("GOLDFISH_SEARCH_PROVIDER", "auto")
     lines = ["Select the public web search provider goldfish should use:"]
     for index, profile in enumerate(SEARCH_PROVIDER_PROFILES, start=1):
         marker = "*" if profile.key == current else " "
@@ -242,7 +270,7 @@ def search_provider_menu() -> str:
     lines.extend(
         [
             "",
-            "Recommended order: Tavily -> Jina -> DuckDuckGo.",
+            "Recommended order: Tavily -> Jina -> DuckDuckGo. For real-time news, choose news.",
             "Enter a number or provider key.",
             "API keys are saved to user-level environment variables only.",
         ]
@@ -292,7 +320,7 @@ def configure_search_environment(
 
 
 def prompt_for_search_api_key(env_key: str, hidden: bool = False) -> str:
-    existing = os.getenv(env_key) or ""
+    existing = get_env(env_key) or ""
     suffix = ", press Enter to keep the current environment value" if existing else ""
     prompt = f"Enter {env_key}{suffix}: "
     if hidden:
@@ -309,14 +337,17 @@ def prompt_for_search_api_key(env_key: str, hidden: bool = False) -> str:
 
 
 def search_provider_status() -> str:
-    current = os.getenv("GOLDFISH_SEARCH_PROVIDER", "auto")
-    tavily = "configured" if os.getenv("TAVILY_API_KEY") else "missing"
-    jina = "configured" if (os.getenv("JINA_API_KEY") or os.getenv("JINA_SEARCH_API_KEY")) else "missing"
+    current = get_env("GOLDFISH_SEARCH_PROVIDER", "auto")
+    tavily = "configured" if get_env("TAVILY_API_KEY") else "missing"
+    jina = "configured" if (get_env("JINA_API_KEY") or get_env("JINA_SEARCH_API_KEY")) else "missing"
     return (
         "Current search provider configuration:\n"
         f"- GOLDFISH_SEARCH_PROVIDER: {current}\n"
         f"- TAVILY_API_KEY: {tavily}\n"
         f"- JINA_API_KEY/JINA_SEARCH_API_KEY: {jina}\n"
+        "- Realtime News Chain: available without API key\n"
+        "- Hacker News Algolia: available without API key\n"
+        "- GDELT DOC API: available without API key\n"
         "- DuckDuckGo fallback: available without API key"
     )
 

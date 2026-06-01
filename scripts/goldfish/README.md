@@ -367,7 +367,7 @@ Built-in information-retrieval skills:
 - `retrieval-planning`: turn a vague research goal into a bounded tool plan.
 - `query-expansion`: generate broad, narrow, source-specific, and local-search queries.
 - `web-research`: collect public web evidence without login, cookies, or anti-scraping bypass.
-- `internet-search`: choose Tavily, Jina, or DuckDuckGo for public web retrieval.
+- `internet-search`: choose Tavily, Jina, realtime news, Hacker News, GDELT, or DuckDuckGo for public web retrieval.
 - `tavily-search`: use Tavily Search API when `TAVILY_API_KEY` is configured.
 - `jina-search`: use Jina Search when `JINA_API_KEY` is configured.
 - `source-evaluation`: judge source reliability, priority, freshness, and failure risk.
@@ -476,8 +476,11 @@ goldfish research "AI coding agent market" --search-provider jina
 Search providers:
 
 - `auto`: tries Tavily when `TAVILY_API_KEY` exists, then Jina when `JINA_API_KEY` exists, then DuckDuckGo fallback.
+- `news`: optimized for latest/today/realtime queries. It tries configured Tavily/Jina first, then no-key Hacker News Algolia, GDELT DOC API, then DuckDuckGo.
 - `tavily`: uses Tavily Search API. Configure `TAVILY_API_KEY`; optional `TAVILY_SEARCH_ENDPOINT`.
 - `jina`: uses Jina Search. Configure `JINA_API_KEY`; optional `JINA_SEARCH_ENDPOINT`.
+- `hackernews`: no-key Hacker News Algolia API, useful for latest developer/AI engineering links.
+- `gdelt`: no-key GDELT DOC API, useful for global news article discovery.
 - `duckduckgo`: no-key public HTML fallback.
 
 Recommended setup flow:
@@ -492,7 +495,7 @@ Then enter:
 /search
 ```
 
-Choose Tavily, Jina, or DuckDuckGo. Tavily/Jina keys are saved to user-level environment variables only, not project files.
+Choose Tavily, Jina, News, Hacker News, GDELT, or DuckDuckGo. Tavily/Jina keys are saved to user-level environment variables only, not project files. On Windows, goldfish reads user-level environment variables directly, so a key saved with `goldfish setup` works even in an already-open terminal.
 
 Non-interactive status:
 

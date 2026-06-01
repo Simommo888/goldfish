@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -116,6 +117,31 @@ def fetch_url(url: str, timeout: int = 10) -> str:
     with urlopen(request, timeout=timeout) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(charset, errors="replace")
+
+
+def get_env(name: str, default: str = "") -> str:
+    """Read process env, then Windows user env written by `goldfish setup`.
+
+    New Windows shells usually inherit HKCU\\Environment, but already-open
+    terminals often do not. goldfish setup writes API keys there, so runtime
+    code must read it directly instead of trusting only the current process.
+    """
+
+    value = os.getenv(name)
+    if value:
+        return value
+    if os.getenv("GOLDFISH_IGNORE_USER_ENV"):
+        return default
+    if sys.platform.startswith("win"):
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+                stored, _ = winreg.QueryValueEx(key, name)
+                return str(stored or default)
+        except Exception:
+            return default
+    return default
 
 
 def log(message: str, verbose: bool = False) -> None:

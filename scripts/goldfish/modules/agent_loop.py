@@ -504,6 +504,8 @@ def _preferred_search_provider(text: str) -> str:
         return "tavily"
     if "jina" in text:
         return "jina"
+    if any(word in text for word in ["latest", "today", "breaking", "real-time", "realtime", "news", "最新", "实时", "今天", "新闻", "消息"]):
+        return "news"
     if "duckduckgo" in text or "ddg" in text:
         return "duckduckgo"
     return "auto"
