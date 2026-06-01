@@ -15,6 +15,7 @@ from .model_setup import redact_secret_text
 from .providers.registry import get_provider, resolve_llm_connection
 from .state_store import GoldfishState
 from .startup_page import print_startup_banner
+from .setup_agent import SetupSession, configure_language, language_menu
 from .tool_registry import DEFAULT_REGISTRY
 from .utils import kb_root, now
 
@@ -42,16 +43,13 @@ class ChatSession:
         self.config = load_config()
         self.use_llm = use_llm
         self.output_language = str(self.config.settings.get("output_language") or "zh-CN")
+        self.provider_override = provider
         self.provider = provider or self.config.settings.get("llm_provider", "deepseek")
-        settings = dict(self.config.settings)
-        settings["llm_provider"] = self.provider
-        if model:
-            settings["llm_model"] = model
-        if base_url:
-            settings["llm_base_url"] = base_url
-        connection = resolve_llm_connection(settings)
-        self.model = connection["model"]
-        self.base_url = connection["base_url"]
+        self.model_override = model
+        self.base_url_override = base_url
+        self.model = ""
+        self.base_url = ""
+        self._refresh_llm_connection()
         self.history: List[Dict[str, str]] = []
         self.interactive = interactive
         self.session_id = now().strftime("%Y%m%d%H%M%S") + "-" + uuid4().hex[:8]
@@ -66,6 +64,23 @@ class ChatSession:
             "base_url": self.base_url,
             "emit_report": False,
         }
+
+    def _refresh_llm_connection(self) -> None:
+        self.config = load_config()
+        self.output_language = str(self.config.settings.get("output_language") or "zh-CN")
+        settings = dict(self.config.settings)
+        if self.provider:
+            settings["llm_provider"] = self.provider
+        if self.model_override:
+            settings["llm_model"] = self.model_override
+        if self.base_url_override:
+            settings["llm_base_url"] = self.base_url_override
+        if self.provider_override or self.model_override or self.base_url_override:
+            settings["_prefer_settings_over_env"] = True
+        connection = resolve_llm_connection(settings)
+        self.provider = connection["provider"]
+        self.model = connection["model"]
+        self.base_url = connection["base_url"]
 
     def status(self) -> Dict[str, Any]:
         tools = DEFAULT_REGISTRY.list_tools()
@@ -161,12 +176,40 @@ class ChatSession:
         if lower in {"help", "/help"}:
             return HELP_TEXT
         if lower.startswith("/model"):
-            return "Use `goldfish setup`, then enter `/model` to configure the model and API key."
+            arg = message.split(maxsplit=1)[1].strip() if len(message.split(maxsplit=1)) > 1 else ""
+            if arg.lower() in {"list", "ls", "help"}:
+                return SetupSession(interactive=False).handle("/model list")
+            if not self.interactive:
+                return "Use `goldfish setup`, then enter `/model` to configure the model and API key."
+            result = SetupSession(interactive=True).configure_model(arg)
+            self.model_override = None
+            self.base_url_override = None
+            self._refresh_llm_connection()
+            return result + f"\n\nCurrent session model: {self.provider} / {self.model}"
+        if lower.startswith("/language"):
+            arg = message.split(maxsplit=1)[1].strip() if len(message.split(maxsplit=1)) > 1 else ""
+            if arg.lower() in {"list", "ls", "help"}:
+                return language_menu()
+            if arg:
+                result = configure_language(arg)
+            elif self.interactive:
+                print(language_menu())
+                choice = input(cli_theme.prompt("language")).strip()
+                if not choice:
+                    return "Canceled: no language was selected."
+                result = configure_language(choice)
+            else:
+                return language_menu()
+            self._refresh_llm_connection()
+            return result
         if lower.startswith("/provider "):
-            self.provider = message.split(" ", 1)[1].strip()
+            self.provider_override = message.split(" ", 1)[1].strip()
+            self.provider = self.provider_override
+            self._refresh_llm_connection()
             return f"Provider for this chat session: {self.provider}"
         if lower.startswith("/base-url "):
-            self.base_url = message.split(" ", 1)[1].strip()
+            self.base_url_override = message.split(" ", 1)[1].strip()
+            self._refresh_llm_connection()
             return f"Base URL for this chat session: {self.base_url}"
         if lower == "/llm":
             self.use_llm = True

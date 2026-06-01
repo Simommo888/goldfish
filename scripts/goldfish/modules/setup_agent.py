@@ -112,11 +112,14 @@ class SetupSession:
             return "Canceled: no API key was entered and no existing environment variable was found."
 
         configured = configure_environment(profile, api_key, model=model, base_url=base_url, provider=provider, persist_user=True)
+        persist_model_settings(configured)
         return _setup_result(configured)
 
     def _language(self, command: str) -> str:
         parts = command.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 else ""
+        if arg.lower() in {"list", "ls", "help"}:
+            return _language_status() + "\n\n" + language_menu()
         if not arg:
             if not self.interactive:
                 return _language_status() + "\n\n" + language_menu()
@@ -125,7 +128,7 @@ class SetupSession:
             if not choice:
                 return "Canceled: no language was selected."
             return configure_language(choice)
-        return "Language changes must be made from the interactive /language menu. Run goldfish setup, then enter /language."
+        return configure_language(arg)
 
 
 def _setup_result(configured: Dict[str, Any]) -> str:
@@ -176,6 +179,15 @@ def configure_language(value: str) -> str:
         f"- output_language: {profile.code} ({profile.label})\n"
         "- Next generated reports and summaries will use this language."
     )
+
+
+def persist_model_settings(configured: Dict[str, Any]) -> None:
+    config = load_config()
+    settings = dict(config.settings)
+    settings["llm_provider"] = configured["provider"]
+    settings["llm_model"] = configured["model"]
+    settings["llm_base_url"] = configured["base_url"]
+    _write_json(config.config_dir / "settings.json", settings)
 
 
 def _language_status() -> str:

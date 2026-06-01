@@ -71,6 +71,8 @@ class AgentKernel:
             settings["llm_model"] = options.model
         if options.base_url:
             settings["llm_base_url"] = options.base_url
+        if options.provider or options.model or options.base_url:
+            settings["_prefer_settings_over_env"] = True
 
         timezone_name = settings.get("timezone", "Asia/Shanghai")
         date_text = options.date or today_string(timezone_name)

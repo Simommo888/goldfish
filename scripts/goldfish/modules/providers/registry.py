@@ -17,12 +17,15 @@ def resolve_llm_connection(settings: Dict[str, Any]) -> Dict[str, str]:
     """Resolve provider, model, base URL, and API key from settings/env.
 
     API keys are read only from environment variables, never from config files.
-    Priority: AI_NEWS_LLM_API_KEY > provider-specific key > OPENAI_API_KEY.
+    Model routing comes from settings/CLI overrides first; secrets still come
+    from environment variables only. This avoids stale Windows shell variables
+    making the startup page show an old model after `goldfish setup`.
+    Key priority: AI_NEWS_LLM_API_KEY > provider-specific key > OPENAI_API_KEY.
     """
 
-    provider = str(_get_env("AI_NEWS_LLM_PROVIDER") or settings.get("llm_provider") or "openai").lower()
-    model = _get_env("AI_NEWS_LLM_MODEL") or str(settings.get("llm_model") or "gpt-4.1-mini")
-    base_url = _get_env("AI_NEWS_LLM_BASE_URL") or str(settings.get("llm_base_url") or "")
+    provider = str(settings.get("llm_provider") or _get_env("AI_NEWS_LLM_PROVIDER") or "openai").lower()
+    model = str(settings.get("llm_model") or _get_env("AI_NEWS_LLM_MODEL") or "gpt-4.1-mini")
+    base_url = str(settings.get("llm_base_url") or _get_env("AI_NEWS_LLM_BASE_URL") or "")
     api_key = _get_env("AI_NEWS_LLM_API_KEY") or ""
 
     if not api_key and provider == "deepseek":

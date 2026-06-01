@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -24,6 +25,13 @@ from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
+
+
+def _restore_env(name: str, value: str | None) -> None:
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
 
 
 class TestDailyAiNewsAgentBasic(unittest.TestCase):
@@ -103,6 +111,25 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(connection["provider"], "deepseek")
         self.assertEqual(connection["model"], "deepseek-v4-pro")
         self.assertEqual(connection["base_url"], "https://api.deepseek.com")
+
+    def test_provider_registry_prefers_settings_over_stale_model_env(self):
+        old_provider = os.environ.get("AI_NEWS_LLM_PROVIDER")
+        old_model = os.environ.get("AI_NEWS_LLM_MODEL")
+        try:
+            os.environ["AI_NEWS_LLM_PROVIDER"] = "openai"
+            os.environ["AI_NEWS_LLM_MODEL"] = "stale-model"
+            connection = resolve_llm_connection(
+                {
+                    "llm_provider": "deepseek",
+                    "llm_model": "deepseek-v4-pro",
+                    "llm_base_url": "https://api.deepseek.com",
+                }
+            )
+            self.assertEqual(connection["provider"], "deepseek")
+            self.assertEqual(connection["model"], "deepseek-v4-pro")
+        finally:
+            _restore_env("AI_NEWS_LLM_PROVIDER", old_provider)
+            _restore_env("AI_NEWS_LLM_MODEL", old_model)
 
     def test_model_setup_helpers_do_not_require_files(self):
         profile = find_profile("deepseek-v4-pro")
@@ -259,6 +286,31 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("goldfish setup", result.stdout)
+
+    def test_chat_model_list_works(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "chat",
+            "--no-llm",
+            "--once",
+            "/model list",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("DeepSeek", result.stdout)
+
+    def test_setup_language_list_works(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "setup",
+            "--once",
+            "/language list",
+        ]
+        result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("Available output languages", result.stdout)
 
     def test_setup_model_list(self):
         command = [

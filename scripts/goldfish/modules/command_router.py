@@ -208,6 +208,7 @@ HELP_TEXT = """goldfish commands:
 /source-health      Show source health
 /tools              List available local tools
 /model              Point you to `goldfish setup` for model/API key configuration
+/language [code]    Show or switch output language
 /provider <name>    Switch provider for this chat session
 /base-url <url>     Switch base URL for this chat session
 /llm                Enable LLM replies for this chat session
