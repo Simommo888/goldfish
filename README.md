@@ -373,6 +373,7 @@ Built-in information-retrieval skills:
 - `answer-synthesis`: turn retrieved evidence into a concise source-backed answer.
 - `knowledge-routing`: decide whether findings become permanent notes, prompts, project ideas, business ideas, reports, or Inbox items.
 - `retrieval-review`: review retrieval quality and recommend follow-up searches or source changes.
+- `external-cli-tools`: call allow-listed local CLI tools such as `rg`, `git`, `python`, `go`, `node`, and `chafa`.
 - `source-curation`: maintain source lists and priorities.
 - `trend-analysis`: turn repeated signals into trend judgments.
 - `draft-writing`: write safe knowledge drafts from intelligence items.
@@ -387,6 +388,47 @@ goldfish skills retrieval-planning
 goldfish skills web-research
 goldfish skills business-idea
 ```
+
+## External CLI Tools
+
+goldfish can call local command-line tools through an allow-listed config file:
+
+```text
+scripts/goldfish/config/external_tools.json
+```
+
+This is intentionally not an unrestricted shell. Each external tool has a name, command template, timeout, output limit, runner, and allowed working directory. Secrets are redacted from output and long output is truncated.
+
+List tools:
+
+```powershell
+goldfish external list
+```
+
+Run a tool:
+
+```powershell
+goldfish external run rg_search query=MCP path=scripts/goldfish
+goldfish external run git_status
+goldfish external run git_log limit=5
+goldfish external run python_version
+```
+
+Preview without executing:
+
+```powershell
+goldfish external run rg_search query=Agent path=scripts/goldfish --dry-run
+```
+
+Inside chat:
+
+```text
+/external
+/exec rg_search query=MCP path=scripts/goldfish
+/exec git_status
+```
+
+To add a new CLI tool, edit `external_tools.json`. Prefer `runner: direct`. Use `runner: bash` only for reviewed commands, and keep destructive or mutating tools disabled until explicitly needed.
 
 ## 鎼滅储鍘嗗彶鎯呮姤
 

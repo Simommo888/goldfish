@@ -85,6 +85,22 @@ def command_agent(namespace: argparse.Namespace) -> int:
     return _print_json(DEFAULT_REGISTRY.execute("agent", payload))
 
 
+def command_external(namespace: argparse.Namespace) -> int:
+    payload = _namespace_to_payload(namespace)
+    if namespace.external_action == "list":
+        payload["action"] = "list"
+    else:
+        args = dict(_parse_cli_key_values(namespace.args or []))
+        payload = {
+            "action": "run",
+            "name": namespace.name,
+            "args": args,
+            "cwd": namespace.cwd,
+            "dry_run": namespace.dry_run,
+        }
+    return _print_json(DEFAULT_REGISTRY.execute("external_cli", payload))
+
+
 def command_chat(namespace: argparse.Namespace) -> int:
     return run_chat(
         once=namespace.once,
@@ -161,6 +177,18 @@ def build_parser() -> argparse.ArgumentParser:
     tools_parser = subparsers.add_parser("tools", help="List available local tools")
     tools_parser.set_defaults(func=lambda ns: command_tool("tools", ns))
 
+    external_parser = subparsers.add_parser("external", help="List or run allow-listed external CLI tools")
+    external_sub = external_parser.add_subparsers(dest="external_action", required=True)
+    external_list = external_sub.add_parser("list", help="List configured external CLI tools")
+    external_list.add_argument("--include-disabled", action="store_true", help="Show disabled examples too")
+    external_list.set_defaults(func=command_external)
+    external_run = external_sub.add_parser("run", help="Run a configured external CLI tool")
+    external_run.add_argument("name", help="External tool name, e.g. rg_search")
+    external_run.add_argument("args", nargs="*", help="Tool args as key=value, e.g. query=MCP path=scripts")
+    external_run.add_argument("--cwd", default=".", help="Working directory relative to project root")
+    external_run.add_argument("--dry-run", action="store_true", help="Show command without executing")
+    external_run.set_defaults(func=command_external)
+
     skills_parser = subparsers.add_parser("skills", help="List or show goldfish skills")
     skills_parser.add_argument("name", nargs="?", help="Optional skill name")
     skills_parser.set_defaults(func=lambda ns: command_tool("skills", ns))
@@ -196,6 +224,21 @@ def main(argv: List[str] | None = None) -> int:
     if not hasattr(namespace, "func"):
         return run_chat()
     return int(namespace.func(namespace))
+
+
+def _parse_cli_key_values(parts: List[str]) -> Dict[str, Any]:
+    values: Dict[str, Any] = {}
+    positional: List[str] = []
+    for part in parts:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            if key:
+                values[key.replace("-", "_")] = value
+            continue
+        positional.append(part)
+    if positional:
+        values["query"] = " ".join(positional)
+    return values
 
 
 if __name__ == "__main__":

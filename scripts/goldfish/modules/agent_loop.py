@@ -22,7 +22,7 @@ from .providers.registry import get_provider, resolve_llm_connection
 from .utils import kb_root, now, safe_filename
 
 
-ALLOWED_TOOLS = {"research_web", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily"}
+ALLOWED_TOOLS = {"research_web", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli"}
 MAX_RESULT_CHARS = 12000
 MAX_TEXT_CHARS = 1800
 
@@ -118,6 +118,8 @@ def make_plan(goal: str, *, max_steps: int = 5, no_save: bool = False) -> List[P
         steps.append(PlannedStep(1, "reading", "doctor", {}, "Goal asks to inspect runtime/config health."))
     if _wants_tools(lowered):
         steps.append(PlannedStep(len(steps) + 1, "reading", "tools", {}, "Goal asks about available capabilities."))
+    if _wants_external_cli(lowered):
+        steps.append(PlannedStep(len(steps) + 1, "reading", "external_cli", {"action": "list"}, "Goal asks about external CLI tools."))
     if _wants_memory(lowered):
         steps.append(PlannedStep(len(steps) + 1, "reading", "memory_show", {}, "Goal asks to inspect memory."))
     if _wants_local_search(lowered):
@@ -247,6 +249,10 @@ def _rule_final(goal: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]
     if _wants_research(goal.lower()):
         next_actions.insert(0, "Verify high-value web sources before converting them into permanent notes or business ideas.")
     return {"summary": summary, "next_actions": next_actions[:5]}
+
+
+def _wants_external_cli(text: str) -> bool:
+    return any(word in text for word in ["external cli", "external tool", "cli tool", "bash tool", "bash command"])
 
 
 def _create_task_workspace(root: Path, goal: str) -> Dict[str, Any]:

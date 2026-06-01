@@ -106,6 +106,15 @@ class CommandRouter:
             return RoutedCommand("source_health", parsed, "Source health:")
         if command == "/tools":
             return RoutedCommand("tools", {}, "Available tools:")
+        if command in {"/external", "/exec"}:
+            parsed = _parse_flags(rest)
+            positional = _positional_parts(rest)
+            if not positional:
+                return RoutedCommand("external_cli", {"action": "list"}, "External CLI tools:")
+            name = positional[0]
+            args = _parse_key_values(positional[1:])
+            args.update(parsed)
+            return RoutedCommand("external_cli", {"action": "run", "name": name, "args": args}, "External CLI result:")
         return RoutedCommand("", {}, f"Unknown command: {command}", unknown=True)
 
     def _route_natural(self, text: str, defaults: Dict[str, Any]) -> RoutedCommand:
@@ -137,6 +146,8 @@ class CommandRouter:
             return RoutedCommand("source_health", {}, "Source health:")
         if "tools" in lowered:
             return RoutedCommand("tools", {}, "Available tools:")
+        if any(word in lowered for word in ["external cli", "external tools", "cli tools"]):
+            return RoutedCommand("external_cli", {"action": "list"}, "External CLI tools:")
         if wants_weekly:
             return RoutedCommand("weekly", args, "Weekly run completed:")
         if wants_dry_run:
@@ -191,6 +202,21 @@ def _positional_parts(parts: list[str]) -> list[str]:
     return values
 
 
+def _parse_key_values(parts: list[str]) -> Dict[str, Any]:
+    values: Dict[str, Any] = {}
+    rest: list[str] = []
+    for part in parts:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            if key:
+                values[key.replace("-", "_")] = _coerce(value)
+            continue
+        rest.append(part)
+    if rest:
+        values["query"] = " ".join(rest).strip()
+    return values
+
+
 HELP_TEXT = """goldfish commands:
 
 /run                Generate the daily AI intelligence report
@@ -207,6 +233,8 @@ HELP_TEXT = """goldfish commands:
 /skills [name]      List or open lightweight skills
 /source-health      Show source health
 /tools              List available local tools
+/external           List allow-listed external CLI tools
+/exec <tool> k=v    Run an allow-listed external CLI tool
 /model              Point you to `goldfish setup` for model/API key configuration
 /language [code]    Show or switch output language
 /provider <name>    Switch provider for this chat session

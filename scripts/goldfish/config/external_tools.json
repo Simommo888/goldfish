@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "notes": "Allow-listed external CLI tools for goldfish. Commands run without a shell by default. Keep API keys out of args.",
+  "default_timeout_seconds": 20,
+  "default_max_output_chars": 12000,
+  "tools": [
+    {
+      "name": "rg_search",
+      "enabled": true,
+      "description": "Search local project files with ripgrep.",
+      "runner": "direct",
+      "command": ["rg", "--line-number", "--color", "never", "{query}", "{path}"],
+      "defaults": {
+        "path": "."
+      },
+      "required_args": ["query"],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 20,
+      "max_output_chars": 12000
+    },
+    {
+      "name": "git_status",
+      "enabled": true,
+      "description": "Show git branch and working tree status.",
+      "runner": "direct",
+      "command": ["git", "status", "--short", "--branch"],
+      "defaults": {},
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 15,
+      "max_output_chars": 8000
+    },
+    {
+      "name": "git_log",
+      "enabled": true,
+      "description": "Show recent git commits.",
+      "runner": "direct",
+      "command": ["git", "log", "--oneline", "-n", "{limit}"],
+      "defaults": {
+        "limit": "10"
+      },
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 15,
+      "max_output_chars": 8000
+    },
+    {
+      "name": "python_version",
+      "enabled": true,
+      "description": "Show Python version used by the current environment.",
+      "runner": "direct",
+      "command": ["python", "--version"],
+      "defaults": {},
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 10,
+      "max_output_chars": 2000
+    },
+    {
+      "name": "go_version",
+      "enabled": true,
+      "description": "Show Go version if available.",
+      "runner": "direct",
+      "command": ["go", "version"],
+      "defaults": {},
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 10,
+      "max_output_chars": 2000
+    },
+    {
+      "name": "node_version",
+      "enabled": true,
+      "description": "Show Node.js version if available.",
+      "runner": "direct",
+      "command": ["node", "--version"],
+      "defaults": {},
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 10,
+      "max_output_chars": 2000
+    },
+    {
+      "name": "chafa_version",
+      "enabled": true,
+      "description": "Show Chafa version if available.",
+      "runner": "direct",
+      "command": ["chafa", "--version"],
+      "defaults": {},
+      "required_args": [],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 10,
+      "max_output_chars": 2000
+    },
+    {
+      "name": "bash_echo",
+      "enabled": false,
+      "description": "Example bash runner. Disabled by default; enable only after reviewing command safety.",
+      "runner": "bash",
+      "command": "printf '%s\\n' {message}",
+      "defaults": {},
+      "required_args": ["message"],
+      "mutating": false,
+      "allowed_cwd": ["."],
+      "timeout_seconds": 10,
+      "max_output_chars": 2000
+    }
+  ]
+}

@@ -15,6 +15,7 @@ from modules.agent_memory import load_memory
 from modules.agent_loop import make_plan, run_agent_loop
 from modules.command_router import CommandRouter
 from modules.config_loader import load_config
+from modules.external_cli import list_external_tools, run_external_tool
 from modules.insight_extractor import extract_insights
 from modules.model_setup import configure_environment, find_profile, redact_secret_text
 from modules.providers.registry import resolve_llm_connection
@@ -157,6 +158,20 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertIn("MCP business opportunities", routed.args["goal"])
         self.assertEqual(routed.args["max_steps"], 3)
         self.assertTrue(routed.args["no_llm"])
+
+    def test_external_cli_lists_and_dry_runs(self):
+        tools = list_external_tools()
+        names = {tool["name"] for tool in tools}
+        self.assertIn("rg_search", names)
+        result = run_external_tool("rg_search", {"query": "goldfish", "path": "scripts/goldfish"}, dry_run=True)
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["dry_run"])
+
+    def test_command_router_routes_external_exec(self):
+        routed = CommandRouter().route('/exec rg_search query=MCP path=scripts/goldfish', {"no_llm": True})
+        self.assertEqual(routed.tool_name, "external_cli")
+        self.assertEqual(routed.args["name"], "rg_search")
+        self.assertEqual(routed.args["args"]["query"], "MCP")
 
     def test_agent_loop_plans_research_goal(self):
         plan = make_plan("research MCP server commercial opportunities", max_steps=3, no_save=True)

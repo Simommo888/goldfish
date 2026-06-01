@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List
 from .agent_kernel import AgentKernel, RunOptions
 from .agent_memory import load_memory, memory_path
 from .config_loader import load_config
+from .external_cli import list_external_tools, run_external_tool
 from .feedback_tracker import read_feedback_reports
 from .providers.registry import resolve_llm_connection
 from .search_engine import search_goldfish
@@ -102,6 +103,7 @@ class ToolRegistry:
         self.register(ToolSpec(name="history", description="Show recent goldfish runs from SQLite state.", mutating=False, handler=_tool_history))
         self.register(ToolSpec(name="search", description="Search historical intelligence, insights, notes, and chat messages.", mutating=False, handler=_tool_search))
         self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills))
+        self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli))
         self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health))
         self.register(
             ToolSpec(
@@ -214,6 +216,28 @@ def _tool_skills(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"skills_dir": str(skills_dir()), "skills": list_skills()}
 
 
+def _tool_external_cli(payload: Dict[str, Any]) -> Dict[str, Any]:
+    action = str(payload.get("action") or "list").strip().lower()
+    include_disabled = bool(payload.get("include_disabled", False))
+    if action in {"list", "tools"}:
+        return {"status": "ok", "external_tools": list_external_tools(include_disabled=include_disabled)}
+    if action not in {"run", "exec", "execute"}:
+        return {"status": "error", "error": f"unknown external_cli action: {action}"}
+    name = str(payload.get("name") or payload.get("tool_name") or "").strip()
+    if not name:
+        return {"status": "error", "error": "external tool name is required"}
+    args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
+    for key, value in payload.items():
+        if key not in {"action", "name", "tool_name", "args", "cwd", "dry_run", "include_disabled"}:
+            args[key] = value
+    return run_external_tool(
+        name,
+        args=args,
+        cwd=str(payload.get("cwd") or "."),
+        dry_run=bool(payload.get("dry_run", False)),
+    )
+
+
 def _tool_source_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     limit = int(payload.get("limit", 8) or 8)
     state = GoldfishState(kb_root())
@@ -303,6 +327,10 @@ def _tool_doctor(_: Dict[str, Any]) -> Dict[str, Any]:
             "count": len(list_skills()),
             "names": [skill["name"] for skill in list_skills()],
         },
+        "external_cli": {
+            "count": len(list_external_tools()),
+            "names": [tool["name"] for tool in list_external_tools()],
+        },
         "provider": connection["provider"],
         "model": connection["model"],
         "base_url": connection["base_url"] or "default",
@@ -361,7 +389,7 @@ def _required_package_status() -> Dict[str, Dict[str, Any]]:
 
 def _config_file_status() -> Dict[str, bool]:
     config_dir = agent_dir() / "config"
-    names = ["sources.json", "people.json", "keywords.json", "settings.json", "llm_prompts.json"]
+    names = ["sources.json", "people.json", "keywords.json", "settings.json", "llm_prompts.json", "external_tools.json"]
     status: Dict[str, bool] = {}
     for name in names:
         path = config_dir / name
