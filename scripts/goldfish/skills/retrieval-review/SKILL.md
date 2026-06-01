@@ -6,7 +6,7 @@ Review the quality of a completed retrieval run and decide what should be improv
 
 ## When To Use
 
-Use this skill after `research_web`, `agent`, daily runs, or source-health reviews.
+Use this skill after `web_search`, `agent`, daily runs, or source-health reviews.
 
 ## Review Checklist
 

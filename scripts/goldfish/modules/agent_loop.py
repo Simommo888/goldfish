@@ -24,7 +24,7 @@ from .skill_router import select_skills
 from .utils import kb_root, now, safe_filename
 
 
-ALLOWED_TOOLS = {"research_web", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli", "skills"}
+ALLOWED_TOOLS = {"web_search", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli", "skills"}
 MAX_RESULT_CHARS = 12000
 MAX_TEXT_CHARS = 1800
 
@@ -200,23 +200,41 @@ def make_plan(
                 "Goal asks for local/history/notes search.",
             )
         )
-    if _wants_research(lowered) or _skills_include(selected_skills, {"web-research", "internet-search", "business-idea", "trend-analysis"}):
+    if _wants_web_search(lowered):
         steps.append(
             PlannedStep(
                 len(steps) + 1,
                 "search",
-                "research_web",
+                "web_search",
                 {
                     "query": _strip_intent_words(goal),
-                    "limit": 5,
-                    "fetch_limit": 3,
-                    "no_llm": True,
-                    "no_save": no_save,
+                    "limit": 8,
                     "search_provider": _preferred_search_provider(lowered),
                 },
-                "Goal asks for public web research or market/trend/opportunity study.",
+                "Goal asks for public web search results without a full research report.",
             )
         )
+    if _wants_research(lowered) or _skills_include(selected_skills, {"web-research", "internet-search", "business-idea", "trend-analysis"}):
+        if any(step.tool == "web_search" for step in steps) and not _skills_include(selected_skills, {"web-research", "business-idea", "trend-analysis"}):
+            pass
+        else:
+            steps.append(
+                PlannedStep(
+                    len(steps) + 1,
+                    "search",
+                    "web_search",
+                    {
+                        "query": _strip_intent_words(goal),
+                        "mode": "research",
+                        "limit": 5,
+                        "fetch_limit": 3,
+                        "no_llm": True,
+                        "no_save": no_save,
+                        "search_provider": _preferred_search_provider(lowered),
+                    },
+                    "Goal asks for public web research or market/trend/opportunity study.",
+                )
+            )
     if _wants_local_search(lowered) or _skills_include(selected_skills, {"retrieval-planning", "knowledge-routing", "draft-writing"}):
         if not any(step.tool == "search" for step in steps):
             steps.append(
@@ -296,7 +314,7 @@ def _revise_plan(
     used_tools = {str(obs.get("tool")) for obs in observations}
     planned_tools = {step.tool for step in plan}
 
-    if last.get("tool") == "research_web" and not last.get("success") and "search" not in used_tools | planned_tools:
+    if last.get("tool") == "web_search" and not last.get("success") and "search" not in used_tools | planned_tools:
         new_plan = _insert_next_step(
             plan,
             observations,
@@ -305,7 +323,7 @@ def _revise_plan(
             args={"query": _strip_intent_words(goal), "limit": 8},
             reason="Web research failed or degraded; fall back to local history search.",
         )
-        return {"reason": "research_web_failed_add_local_search", "plan": new_plan}
+        return {"reason": "web_search_failed_add_local_search", "plan": new_plan}
 
     if last.get("tool") in {"dry_run", "run_daily"} and not last.get("success") and "doctor" not in used_tools | planned_tools:
         new_plan = _insert_next_step(
@@ -443,6 +461,24 @@ def _skills_include(selected_skills: List[Dict[str, Any]], names: set[str]) -> b
 
 def _wants_external_cli(text: str) -> bool:
     return any(word in text for word in ["external cli", "external tool", "cli tool", "bash tool", "bash command"])
+
+
+def _wants_web_search(text: str) -> bool:
+    return any(
+        word in text
+        for word in [
+            "web search",
+            "internet search",
+            "online search",
+            "search web",
+            "search the web",
+            "联网搜索",
+            "全网搜索",
+            "网页搜索",
+            "搜索网页",
+            "查网页",
+        ]
+    )
 
 
 def _wants_project_search(text: str) -> bool:

@@ -85,11 +85,17 @@ class CommandRouter:
             query_parts = _positional_parts(rest)
             parsed.setdefault("query", " ".join(query_parts).strip())
             return RoutedCommand("search", parsed, "Local search results:")
+        if command in {"/web", "/web-search"}:
+            parsed = _parse_flags(rest)
+            query_parts = _positional_parts(rest)
+            parsed.setdefault("query", " ".join(query_parts).strip())
+            return RoutedCommand("web_search", parsed, "Web search results:")
         if command == "/research":
             parsed = _parse_flags(rest)
             query_parts = _positional_parts(rest)
             parsed.setdefault("query", " ".join(query_parts).strip())
-            return RoutedCommand("research_web", parsed, "Web research completed:")
+            parsed["mode"] = "research"
+            return RoutedCommand("web_search", parsed, "Web research completed:")
         if command == "/agent":
             parsed = _parse_flags(rest)
             goal_parts = _positional_parts(rest)
@@ -135,6 +141,9 @@ class CommandRouter:
             return RoutedCommand("feedback_list", {}, "Feedback records:")
         if "history" in lowered:
             return RoutedCommand("history", {}, "Recent runs:")
+        if any(word in lowered for word in ["web search", "internet search", "online search", "search web", "联网搜索", "全网搜索", "网页搜索", "搜索网页"]):
+            query = _strip_web_search_intent(text)
+            return RoutedCommand("web_search", {**args, "query": query}, "Web search results:")
         if any(
             word in lowered
             for word in [
@@ -256,6 +265,14 @@ def _parse_key_values(parts: list[str]) -> Dict[str, Any]:
     return values
 
 
+def _strip_web_search_intent(text: str) -> str:
+    query = text
+    for marker in ["web search", "internet search", "online search", "search web", "search the web", "联网搜索", "全网搜索", "网页搜索", "搜索网页"]:
+        query = query.replace(marker, "")
+        query = query.replace(marker.title(), "")
+    return query.strip(" ：:，,") or text.strip()
+
+
 HELP_TEXT = """goldfish commands:
 
 /run                Generate the daily AI intelligence report
@@ -267,6 +284,7 @@ HELP_TEXT = """goldfish commands:
 /feedback           Show feedback records
 /history            Show recent runs
 /search <query>     Search local goldfish history and generated notes
+/web <query>        Search the public web and return links
 /research <query>   Search the public web, fetch accessible pages, and save a report
 /agent <goal>       Plan and run a bounded goal-driven agent loop
 /skills [name]      List or open lightweight skills

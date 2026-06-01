@@ -359,8 +359,11 @@ def _search_provider_order(provider: str | None = None) -> List[str]:
     }
     requested = aliases.get(requested, requested)
     if requested in {"tavily", "jina", "duckduckgo"}:
-        fallback = [item for item in ["jina", "duckduckgo"] if item != requested]
-        return [requested, *fallback]
+        if requested == "tavily":
+            return ["tavily", "jina", "duckduckgo"]
+        if requested == "jina":
+            return ["jina", "duckduckgo"]
+        return ["duckduckgo"]
     order: List[str] = []
     if os.environ.get("TAVILY_API_KEY"):
         order.append("tavily")

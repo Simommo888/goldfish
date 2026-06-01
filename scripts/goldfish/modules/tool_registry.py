@@ -18,7 +18,7 @@ from .search_engine import search_goldfish
 from .skill_loader import list_skills, load_skill, skills_dir
 from .state_store import GoldfishState
 from .utils import agent_dir, kb_root
-from .web_researcher import research_public_web
+from .web_researcher import research_public_web, search_public_web
 
 
 ToolHandler = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -103,18 +103,18 @@ class ToolRegistry:
         self.register(ToolSpec(name="feedback_list", description="List checked feedback reports.", mutating=False, handler=_tool_feedback_list))
         self.register(ToolSpec(name="history", description="Show recent goldfish runs from SQLite state.", mutating=False, handler=_tool_history))
         self.register(ToolSpec(name="search", description="Search historical intelligence, insights, notes, and chat messages.", mutating=False, handler=_tool_search))
-        self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills))
-        self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli))
-        self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health))
         self.register(
             ToolSpec(
-                name="research_web",
-                description="Search the public web, fetch accessible pages, and save a Markdown research report.",
+                name="web_search",
+                description="Search the public web through the configured API/fallback provider; optionally fetch pages and save a research report.",
                 mutating=True,
-                handler=_tool_research_web,
+                handler=_tool_web_search,
                 allowed_paths=("04_Resources/AI-News/Reports",),
             )
         )
+        self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills))
+        self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli))
+        self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health))
         self.register(
             ToolSpec(
                 name="agent",
@@ -210,6 +210,51 @@ def _tool_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     return search_goldfish(query, limit=limit, root=kb_root())
 
 
+def _tool_web_search(payload: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(payload.get("query", "") or "").strip()
+    if not query:
+        return {"status": "error", "query": query, "error": "query is required", "results": []}
+    mode = str(payload.get("mode") or "search").strip().lower()
+    limit = int(payload.get("limit", 8) or 8)
+    timeout = int(payload.get("timeout", 12) or 12)
+    provider = payload.get("search_provider") or payload.get("provider")
+    if mode in {"research", "report", "deep"} or bool(payload.get("fetch_pages", False)):
+        return {
+            "status": "ok",
+            "mode": "research",
+            "research": research_public_web(
+                query=query,
+                limit=limit,
+                fetch_limit=int(payload.get("fetch_limit", 4) or 4),
+                timeout=timeout,
+                use_llm=not bool(payload.get("no_llm", False)),
+                save=not bool(payload.get("no_save", False)),
+                search_provider=provider,
+                root=kb_root(),
+            ),
+            "safety": _public_web_safety(),
+        }
+    results = search_public_web(query, limit=limit, timeout=timeout, provider=provider)
+    return {
+        "status": "ok",
+        "mode": "search",
+        "query": query,
+        "provider": results[0].get("source", "") if results else "",
+        "count": len(results),
+        "results": results,
+        "safety": _public_web_safety(),
+    }
+
+
+def _public_web_safety() -> Dict[str, bool]:
+    return {
+        "public_web_only": True,
+        "login": False,
+        "cookies_saved": False,
+        "anti_scraping_bypass": False,
+    }
+
+
 def _tool_skills(payload: Dict[str, Any]) -> Dict[str, Any]:
     name = str(payload.get("name", "") or "").strip()
     if name:
@@ -246,25 +291,6 @@ def _tool_source_health(payload: Dict[str, Any]) -> Dict[str, Any]:
         "state_db": str(state.path),
         "summary": state.source_health_summary(limit=limit),
         "recent": state.recent_source_health(limit=limit),
-    }
-
-
-def _tool_research_web(payload: Dict[str, Any]) -> Dict[str, Any]:
-    query = str(payload.get("query", "") or "").strip()
-    if not query:
-        return {"query": query, "error": "query is required", "status": "error"}
-    return {
-        "status": "ok",
-        "research": research_public_web(
-            query=query,
-            limit=int(payload.get("limit", 6) or 6),
-            fetch_limit=int(payload.get("fetch_limit", 4) or 4),
-            timeout=int(payload.get("timeout", 12) or 12),
-            use_llm=not bool(payload.get("no_llm", False)),
-            save=not bool(payload.get("no_save", False)),
-            search_provider=payload.get("search_provider") or payload.get("provider"),
-            root=kb_root(),
-        ),
     }
 
 

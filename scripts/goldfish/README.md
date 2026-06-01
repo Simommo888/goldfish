@@ -451,8 +451,14 @@ goldfish search "RAG 璇勬祴"
 
 ## Public Web Research
 
-`search` 鍙悳绱㈡湰鍦板巻鍙叉儏鎶ワ紱`research` 浼氬幓鍏紑 Web 妫€绱㈠苟鎶撳彇鍙闂〉闈紝鐒跺悗淇濆瓨涓€浠?Markdown 鐮旂┒鎶ュ憡銆?
+`search` searches local goldfish history and notes. `web` and `research` both use the unified `web_search` tool for public internet retrieval:
+
+- `goldfish web ...` returns public search result links only.
+- `goldfish research ...` uses the same tool in research mode: search, fetch accessible pages, synthesize, and optionally save a Markdown report.
+
 ```bash
+goldfish web "MCP server best practices"
+goldfish web "AI coding commercialization" --search-provider tavily
 goldfish research "MCP server best practices"
 goldfish research "AI coding commercialization" --limit 8 --fetch-limit 5
 goldfish research "RAG evaluation methods" --no-llm
@@ -462,6 +468,7 @@ goldfish research "AI coding agent market" --search-provider jina
 
 鑱婂ぉ妯″紡閲屼篃鍙互浣跨敤锛?
 ```text
+/web MCP server best practices
 /research MCP server best practices
 /research MCP server commercial opportunities --search-provider tavily
 ```
@@ -648,7 +655,7 @@ parse_goal -> make_plan -> execute_step -> observe -> revise_plan -> final_answe
 Allowed tools:
 
 - `skills`
-- `research_web`
+- `web_search`
 - `search`
 - `memory_show`
 - `tools`

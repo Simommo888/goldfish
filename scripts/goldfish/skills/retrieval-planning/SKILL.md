@@ -32,7 +32,7 @@ Use this skill before research when the user asks to investigate, compare, monit
 
 ## Tool Preference
 
-- Use `research_web` for public web investigation.
+- Use `web_search` for public web search and research-mode investigation.
 - Use `search` for previous notes, reports, local memory, or generated drafts.
 - Use `source_health` when source reliability is part of the task.
 - Use `doctor` only when runtime or API health is suspected.

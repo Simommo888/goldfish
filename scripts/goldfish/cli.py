@@ -158,6 +158,13 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--limit", type=int, default=20, help="How many results to show")
     search_parser.set_defaults(func=lambda ns: command_tool("search", ns))
 
+    web_parser = subparsers.add_parser("web", help="Search the public web and return result links")
+    web_parser.add_argument("query", help="Public web search query")
+    web_parser.add_argument("--limit", type=int, default=8, help="How many search results to collect")
+    web_parser.add_argument("--timeout", type=int, default=12, help="Network timeout in seconds")
+    web_parser.add_argument("--search-provider", choices=["auto", "tavily", "jina", "duckduckgo"], help="Public search provider")
+    web_parser.set_defaults(func=lambda ns: command_tool("web_search", ns))
+
     research_parser = subparsers.add_parser("research", help="Search public web and save a research report")
     research_parser.add_argument("query", help="Research query")
     research_parser.add_argument("--limit", type=int, default=6, help="How many search results to collect")
@@ -166,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--search-provider", choices=["auto", "tavily", "jina", "duckduckgo"], help="Public search provider")
     research_parser.add_argument("--no-llm", action="store_true", help="Disable LLM synthesis")
     research_parser.add_argument("--no-save", action="store_true", help="Do not save Markdown report")
-    research_parser.set_defaults(func=lambda ns: command_tool("research_web", ns))
+    research_parser.set_defaults(func=lambda ns: command_tool("web_search", ns), mode="research")
 
     agent_parser = subparsers.add_parser("agent", help="Run a bounded goal-driven agent loop")
     agent_parser.add_argument("goal", help="Natural-language goal for goldfish")

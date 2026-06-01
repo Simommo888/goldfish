@@ -150,10 +150,17 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
 
     def test_command_router_routes_research(self):
         routed = CommandRouter().route('/research MCP servers --limit 3 --no-llm', {"no_llm": True})
-        self.assertEqual(routed.tool_name, "research_web")
+        self.assertEqual(routed.tool_name, "web_search")
         self.assertIn("MCP servers", routed.args["query"])
         self.assertEqual(routed.args["limit"], 3)
         self.assertTrue(routed.args["no_llm"])
+        self.assertEqual(routed.args["mode"], "research")
+
+    def test_command_router_routes_web_search(self):
+        routed = CommandRouter().route('/web MCP servers --limit 3', {"no_llm": True})
+        self.assertEqual(routed.tool_name, "web_search")
+        self.assertIn("MCP servers", routed.args["query"])
+        self.assertEqual(routed.args["limit"], 3)
 
     def test_command_router_routes_agent(self):
         routed = CommandRouter().route('/agent research MCP business opportunities --max-steps 3 --no-llm', {"no_llm": True})
@@ -178,8 +185,9 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
 
     def test_agent_loop_plans_research_goal(self):
         plan = make_plan("research MCP server commercial opportunities", max_steps=3, no_save=True)
-        self.assertEqual(plan[0].tool, "research_web")
+        self.assertEqual(plan[0].tool, "web_search")
         self.assertEqual(plan[0].status, "search")
+        self.assertEqual(plan[0].args["mode"], "research")
         self.assertTrue(plan[0].args["no_save"])
 
     def test_agent_loop_runs_with_fake_registry_and_workspace(self):
@@ -189,9 +197,10 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
 
             def execute(self, name, args=None):
                 self.calls.append((name, args or {}))
-                if name == "research_web":
+                if name == "web_search":
                     return {
                         "status": "ok",
+                        "mode": "research",
                         "research": {
                             "query": (args or {}).get("query", ""),
                             "results_count": 1,
@@ -223,7 +232,7 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertTrue((Path(result["task_path"]) / "skills.md").exists())
         self.assertTrue((Path(result["task_path"]) / "selected_skills.json").exists())
         self.assertEqual(result["observations"][0]["tool"], "skills")
-        self.assertEqual(result["observations"][1]["tool"], "research_web")
+        self.assertEqual(result["observations"][1]["tool"], "web_search")
         self.assertTrue(result["selected_skills"])
 
     def test_agent_loop_revises_plan_after_research_failure(self):
@@ -231,7 +240,7 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
             def execute(self, name, args=None):
                 if name == "skills":
                     return {"status": "ok", "skill": {"name": (args or {}).get("name", "")}}
-                if name == "research_web":
+                if name == "web_search":
                     return {"status": "error", "error": "network unavailable"}
                 if name == "search":
                     return {"status": "ok", "query": (args or {}).get("query", ""), "results": []}
@@ -249,9 +258,9 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         )
         self.assertGreaterEqual(result["execution"]["plan_revisions"], 2)
         self.assertEqual(result["observations"][0]["tool"], "skills")
-        self.assertEqual(result["observations"][1]["tool"], "research_web")
+        self.assertEqual(result["observations"][1]["tool"], "web_search")
         self.assertEqual(result["observations"][2]["tool"], "search")
-        self.assertIn("research_web_failed_add_local_search", result["plan_revisions"][1]["reason"])
+        self.assertIn("web_search_failed_add_local_search", result["plan_revisions"][1]["reason"])
 
     def test_skill_router_selects_business_and_draft_skills(self):
         business = select_skills("帮我从 MCP 新闻里提炼 3 个商业想法和 MVP")
@@ -290,6 +299,7 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
             os.environ["TAVILY_API_KEY"] = "test-key"
             self.assertEqual(_search_provider_order()[0], "tavily")
             self.assertEqual(_search_provider_order("jina")[0], "jina")
+            self.assertEqual(_search_provider_order("duckduckgo"), ["duckduckgo"])
         finally:
             _restore_env("TAVILY_API_KEY", old_tavily)
             _restore_env("JINA_API_KEY", old_jina)
