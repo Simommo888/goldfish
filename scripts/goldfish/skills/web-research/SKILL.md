@@ -22,12 +22,25 @@ Use this skill for public internet research, market scans, product comparisons, 
 
 1. Start with a retrieval plan.
 2. Generate 3 to 8 queries.
-3. Search public web sources.
+3. Select a public search provider:
+   - `auto` by default.
+   - `bing` when Bing Web Search credentials are available and broad current-web coverage is useful.
+   - `google` when Google Custom Search credentials are available and precision/source verification matters.
+   - `duckduckgo` as the no-key fallback.
 4. Fetch only accessible pages.
 5. Extract title, URL, date, publisher, core claim, and useful quotes or paraphrases.
 6. Group evidence by theme.
 7. Separate facts, inference, and speculation.
 8. Produce a Markdown research note.
+
+## Provider Commands
+
+```powershell
+goldfish research "MCP server commercial opportunities" --search-provider auto
+goldfish research "MCP server commercial opportunities" --search-provider bing
+goldfish research "RAG evaluation docs" --search-provider google
+goldfish research "AI coding agent market" --search-provider duckduckgo
+```
 
 ## Evidence Fields
 

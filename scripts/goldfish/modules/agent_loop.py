@@ -187,6 +187,7 @@ def make_plan(goal: str, *, max_steps: int = 5, no_save: bool = False) -> List[P
                     "fetch_limit": 3,
                     "no_llm": True,
                     "no_save": no_save,
+                    "search_provider": _preferred_search_provider(lowered),
                 },
                 "Goal asks for public web research or market/trend/opportunity study.",
             )
@@ -419,6 +420,16 @@ def _wants_project_search(text: str) -> bool:
             "repository",
         ]
     )
+
+
+def _preferred_search_provider(text: str) -> str:
+    if "bing" in text:
+        return "bing"
+    if "google" in text or "谷歌" in text:
+        return "google"
+    if "duckduckgo" in text or "ddg" in text:
+        return "duckduckgo"
+    return "auto"
 
 
 def _create_task_workspace(root: Path, goal: str) -> Dict[str, Any]:

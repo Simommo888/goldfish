@@ -8,14 +8,16 @@ or crawl unbounded link graphs.
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.request import Request, urlopen
 
 from .providers.registry import get_provider, resolve_llm_connection
 from .storage import save_markdown
-from .utils import fetch_url, kb_root, now, safe_filename, strip_html, today_string, truncate
+from .utils import USER_AGENT, fetch_url, kb_root, now, safe_filename, strip_html, today_string, truncate
 
 
 SEARCH_URLS = [
@@ -32,6 +34,7 @@ def research_public_web(
     timeout: int = 12,
     use_llm: bool = True,
     save: bool = True,
+    search_provider: str | None = None,
     root: Path | None = None,
 ) -> Dict[str, Any]:
     root = root or kb_root()
@@ -39,7 +42,7 @@ def research_public_web(
     if not query:
         return {"query": query, "error": "query is required", "results": [], "pages": []}
 
-    search_results = search_public_web(query, limit=limit, timeout=timeout)
+    search_results = search_public_web(query, limit=limit, timeout=timeout, provider=search_provider)
     pages = fetch_research_pages(search_results[:fetch_limit], timeout=timeout)
     synthesis = synthesize_research(query, search_results, pages, use_llm=use_llm)
     markdown = generate_research_markdown(query, search_results, pages, synthesis)
@@ -50,6 +53,7 @@ def research_public_web(
 
     return {
         "query": query,
+        "search_provider": search_results[0].get("source", "") if search_results else "",
         "results_count": len(search_results),
         "pages_count": len(pages),
         "report_path": path,
@@ -59,7 +63,59 @@ def research_public_web(
     }
 
 
-def search_public_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+def search_public_web(query: str, limit: int = 6, timeout: int = 12, provider: str | None = None) -> List[Dict[str, Any]]:
+    errors = []
+    for search_provider in _search_provider_order(provider):
+        try:
+            if search_provider == "bing":
+                results = search_bing_web(query, limit=limit, timeout=timeout)
+            elif search_provider == "google":
+                results = search_google_custom_search(query, limit=limit, timeout=timeout)
+            else:
+                results = search_duckduckgo_html(query, limit=limit, timeout=timeout)
+            if results:
+                return results
+            errors.append(f"{search_provider}: no results")
+        except Exception as exc:
+            errors.append(f"{search_provider}: {exc}")
+            continue
+    manual_url = SEARCH_URLS[0].format(query=urllib.parse.quote_plus(query))
+    return [
+        {
+            "title": "No parseable search results",
+            "url": manual_url,
+            "snippet": "; ".join(errors[-4:]) or "The public search provider returned no parseable result blocks.",
+            "source": "manual-review",
+            "error": "no_results",
+        }
+    ]
+
+
+def search_bing_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY")
+    endpoint = os.environ.get("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search").rstrip("/")
+    if not api_key:
+        raise RuntimeError("missing BING_SEARCH_API_KEY")
+    url = endpoint + "?" + urllib.parse.urlencode({"q": query, "count": max(1, min(limit, 10)), "responseFilter": "Webpages"})
+    payload = _fetch_json(url, timeout=timeout, headers={"Ocp-Apim-Subscription-Key": api_key})
+    return _bing_results_from_payload(payload, limit=limit)
+
+
+def search_google_custom_search(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
+    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    cx = os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID")
+    if not api_key:
+        raise RuntimeError("missing GOOGLE_SEARCH_API_KEY")
+    if not cx:
+        raise RuntimeError("missing GOOGLE_SEARCH_CX")
+    url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode(
+        {"key": api_key, "cx": cx, "q": query, "num": max(1, min(limit, 10))}
+    )
+    payload = _fetch_json(url, timeout=timeout)
+    return _google_results_from_payload(payload, limit=limit)
+
+
+def search_duckduckgo_html(query: str, limit: int = 6, timeout: int = 12) -> List[Dict[str, Any]]:
     errors = []
     for template in SEARCH_URLS:
         url = template.format(query=urllib.parse.quote_plus(query))
@@ -74,16 +130,7 @@ def search_public_web(query: str, limit: int = 6, timeout: int = 12) -> List[Dic
         if results:
             return results
         errors.append(f"{url}: no parseable result blocks")
-    manual_url = SEARCH_URLS[0].format(query=urllib.parse.quote_plus(query))
-    return [
-        {
-            "title": "No parseable search results",
-            "url": manual_url,
-            "snippet": "; ".join(errors[-2:]) or "The public search page returned no parseable result blocks.",
-            "source": "DuckDuckGo HTML",
-            "error": "no_results",
-        }
-    ]
+    raise RuntimeError("; ".join(errors[-2:]) or "DuckDuckGo returned no parseable result blocks")
 
 
 def fetch_research_pages(results: List[Dict[str, Any]], timeout: int = 12) -> List[Dict[str, Any]]:
@@ -290,6 +337,82 @@ class DuckDuckGoHTMLParser(HTMLParser):
                 self.results[-1]["snippet"] = snippet
             self._in_snippet = False
             self._buffer = []
+
+
+def _search_provider_order(provider: str | None = None) -> List[str]:
+    requested = (provider or os.environ.get("GOLDFISH_SEARCH_PROVIDER") or "auto").strip().lower()
+    aliases = {
+        "ddg": "duckduckgo",
+        "duck": "duckduckgo",
+        "duckduckgo-html": "duckduckgo",
+        "google-cse": "google",
+        "google_custom_search": "google",
+        "bing-web": "bing",
+    }
+    requested = aliases.get(requested, requested)
+    if requested in {"bing", "google", "duckduckgo"}:
+        fallback = [item for item in ["duckduckgo"] if item != requested]
+        return [requested, *fallback]
+    order: List[str] = []
+    if os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY"):
+        order.append("bing")
+    if (os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY")) and (
+        os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID")
+    ):
+        order.append("google")
+    order.append("duckduckgo")
+    return order
+
+
+def _fetch_json(url: str, timeout: int = 12, headers: Dict[str, str] | None = None) -> Dict[str, Any]:
+    request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    request_headers.update(headers or {})
+    request = Request(url, headers=request_headers)
+    with urlopen(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return json.loads(response.read().decode(charset, errors="replace"))
+
+
+def _bing_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    values = payload.get("webPages", {}).get("value", [])
+    results = []
+    for item in values[:limit]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        title = str(item.get("name") or "").strip()
+        if not url or not title:
+            continue
+        results.append(
+            {
+                "title": title,
+                "url": url,
+                "snippet": str(item.get("snippet") or "").strip(),
+                "source": "Bing Web Search",
+            }
+        )
+    return results
+
+
+def _google_results_from_payload(payload: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+    values = payload.get("items", [])
+    results = []
+    for item in values[:limit]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("link") or "").strip()
+        title = str(item.get("title") or "").strip()
+        if not url or not title:
+            continue
+        results.append(
+            {
+                "title": title,
+                "url": url,
+                "snippet": str(item.get("snippet") or "").strip(),
+                "source": "Google Custom Search",
+            }
+        )
+    return results
 
 
 def _clean_duckduckgo_url(url: str) -> str:

@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "default_provider": "auto",
+  "notes": [
+    "No API key is stored here. Configure keys with environment variables only.",
+    "auto tries Bing when BING_SEARCH_API_KEY exists, then Google when GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX exist, then DuckDuckGo HTML fallback.",
+    "All providers are for public web search only. Do not log in, store cookies, or bypass anti-scraping controls."
+  ],
+  "providers": [
+    {
+      "name": "bing",
+      "enabled": true,
+      "display_name": "Bing Web Search",
+      "env": {
+        "api_key": "BING_SEARCH_API_KEY",
+        "endpoint": "BING_SEARCH_ENDPOINT"
+      },
+      "fallback_env": {
+        "api_key": "AZURE_BING_SEARCH_KEY"
+      },
+      "best_for": [
+        "current web research",
+        "market scans",
+        "company/product pages",
+        "broad English queries"
+      ],
+      "notes": "Uses the Bing Web Search compatible endpoint. Default endpoint is https://api.bing.microsoft.com/v7.0/search."
+    },
+    {
+      "name": "google",
+      "enabled": true,
+      "display_name": "Google Custom Search",
+      "env": {
+        "api_key": "GOOGLE_SEARCH_API_KEY",
+        "cx": "GOOGLE_SEARCH_CX"
+      },
+      "fallback_env": {
+        "api_key": "GOOGLE_API_KEY",
+        "cx": "GOOGLE_CSE_ID"
+      },
+      "best_for": [
+        "precise source discovery",
+        "technical docs",
+        "specific company or product searches",
+        "site-restricted searches"
+      ],
+      "notes": "Requires a Google Programmable Search Engine cx id."
+    },
+    {
+      "name": "duckduckgo",
+      "enabled": true,
+      "display_name": "DuckDuckGo HTML",
+      "env": {},
+      "best_for": [
+        "no-key fallback",
+        "manual review links",
+        "lightweight public search"
+      ],
+      "notes": "No key required. Parsing can be less stable than API providers."
+    }
+  ]
+}

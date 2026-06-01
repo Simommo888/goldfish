@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
@@ -261,6 +262,7 @@ def _tool_research_web(payload: Dict[str, Any]) -> Dict[str, Any]:
             timeout=int(payload.get("timeout", 12) or 12),
             use_llm=not bool(payload.get("no_llm", False)),
             save=not bool(payload.get("no_save", False)),
+            search_provider=payload.get("search_provider") or payload.get("provider"),
             root=kb_root(),
         ),
     }
@@ -331,6 +333,7 @@ def _tool_doctor(_: Dict[str, Any]) -> Dict[str, Any]:
             "count": len(list_external_tools()),
             "names": [tool["name"] for tool in list_external_tools()],
         },
+        "search_providers": _search_provider_status(),
         "provider": connection["provider"],
         "model": connection["model"],
         "base_url": connection["base_url"] or "default",
@@ -389,7 +392,16 @@ def _required_package_status() -> Dict[str, Dict[str, Any]]:
 
 def _config_file_status() -> Dict[str, bool]:
     config_dir = agent_dir() / "config"
-    names = ["sources.json", "people.json", "keywords.json", "settings.json", "llm_prompts.json", "external_tools.json"]
+    names = [
+        "sources.json",
+        "people.json",
+        "keywords.json",
+        "settings.json",
+        "llm_prompts.json",
+        "agent_profile.json",
+        "external_tools.json",
+        "search_providers.json",
+    ]
     status: Dict[str, bool] = {}
     for name in names:
         path = config_dir / name
@@ -402,6 +414,23 @@ def _config_file_status() -> Dict[str, bool]:
         except Exception:
             status[name] = False
     return status
+
+
+def _search_provider_status() -> Dict[str, Any]:
+    return {
+        "default": os.environ.get("GOLDFISH_SEARCH_PROVIDER", "auto"),
+        "bing": {
+            "configured": bool(os.environ.get("BING_SEARCH_API_KEY") or os.environ.get("AZURE_BING_SEARCH_KEY")),
+            "endpoint": os.environ.get("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search"),
+        },
+        "google": {
+            "configured": bool(
+                (os.environ.get("GOOGLE_SEARCH_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+                and (os.environ.get("GOOGLE_SEARCH_CX") or os.environ.get("GOOGLE_CSE_ID"))
+            ),
+        },
+        "duckduckgo": {"configured": True, "fallback": True},
+    }
 
 
 def _obsidian_dir_status(root) -> Dict[str, bool]:
