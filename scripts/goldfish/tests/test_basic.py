@@ -209,10 +209,37 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
             root=ROOT,
         )
         self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["execution"]["mode"], "plan_execute")
         self.assertTrue(Path(result["task_path"]).exists())
         self.assertTrue((Path(result["task_path"]) / "goal.md").exists())
         self.assertTrue((Path(result["task_path"]) / "observations.json").exists())
+        self.assertTrue((Path(result["task_path"]) / "execution_state.json").exists())
+        self.assertTrue((Path(result["task_path"]) / "plan_revisions.jsonl").exists())
         self.assertEqual(result["observations"][0]["tool"], "research_web")
+
+    def test_agent_loop_revises_plan_after_research_failure(self):
+        class FakeRegistry:
+            def execute(self, name, args=None):
+                if name == "research_web":
+                    return {"status": "error", "error": "network unavailable"}
+                if name == "search":
+                    return {"status": "ok", "query": (args or {}).get("query", ""), "results": []}
+                if name == "memory_show":
+                    return {"status": "ok", "memory": {}}
+                return {"status": "ok"}
+
+        result = run_agent_loop(
+            "research MCP server commercial opportunities",
+            registry=FakeRegistry(),
+            max_steps=3,
+            no_llm=True,
+            no_save=True,
+            root=ROOT,
+        )
+        self.assertGreaterEqual(result["execution"]["plan_revisions"], 2)
+        self.assertEqual(result["observations"][0]["tool"], "research_web")
+        self.assertEqual(result["observations"][1]["tool"], "search")
+        self.assertIn("research_web_failed_add_local_search", result["plan_revisions"][1]["reason"])
 
     def test_skills_can_load(self):
         skills = list_skills()
@@ -390,6 +417,7 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn('"agent"', result.stdout)
         self.assertIn('"task_id"', result.stdout)
+        self.assertIn('"plan_execute"', result.stdout)
 
     def test_search_engine_returns_shape(self):
         result = search_goldfish("MCP", limit=3, root=ROOT)

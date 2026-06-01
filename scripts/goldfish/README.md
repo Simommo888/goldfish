@@ -590,9 +590,15 @@ goldfish run --write-drafts
 
 ## Agent Loop
 
-`agent_loop` is the first goal-driven layer for goldfish. It turns a natural-language goal into a small bounded plan, calls existing ToolRegistry tools, records observations, and writes a task workspace.
+`agent_loop` is goldfish's first plan/execute framework. It turns a natural-language goal into a short plan, executes one allow-listed `ToolRegistry` tool at a time, records each observation, revises the plan when a fallback is useful, and then writes a final answer.
 
-It does not execute arbitrary shell commands. First-version allowed tools are:
+The loop shape is:
+
+```text
+parse_goal -> make_plan -> execute_step -> observe -> revise_plan -> final_answer
+```
+
+Allowed tools:
 
 - `research_web`
 - `search`
@@ -601,6 +607,7 @@ It does not execute arbitrary shell commands. First-version allowed tools are:
 - `doctor`
 - `dry_run`
 - `run_daily`
+- `external_cli`
 
 Run from the CLI:
 
@@ -621,7 +628,8 @@ Natural-language research-like requests in chat can also route to the agent loop
 ```text
 research MCP business opportunities
 study RAG evaluation trends
-甯垜鐮旂┒ AI coding agent 鐨勫晢涓氭満浼?```
+help me research AI coding agent business opportunities
+```
 
 Task workspaces are saved under:
 
@@ -634,23 +642,32 @@ Each workspace contains:
 ```text
 goal.md
 plan.md
+plan_revisions.jsonl
+execution_state.json
 observations.json
 tool_calls.jsonl
 final.md
 ```
 
+Plan/execute behavior:
+
+- If public web research fails, goldfish can revise the plan and fall back to local search.
+- If a daily run fails, goldfish can revise the plan and run `doctor`.
+- If a goal asks for project/code search after listing external tools, goldfish can use the allow-listed `rg_search` wrapper through `external_cli`.
+- `run_daily` defaults to dry-run behavior unless the goal clearly asks to write/save/run for real.
+
 Safety boundaries:
 
 - All tool execution goes through `ToolRegistry`.
-- No arbitrary shell execution.
+- No arbitrary shell execution from `agent_loop`.
+- `external_cli` can only call allow-listed tools from `config/external_tools.json`.
 - No API keys are written to task files.
 - Tool results are truncated before saving when too long.
-- `run_daily` defaults to dry-run behavior unless the goal clearly asks to write/save/run for real.
-- Public web research still follows the existing no-login, no-cookie, no-anti-scraping-bypass boundary.
+- Public web research follows the existing no-login, no-cookie, no-anti-scraping-bypass boundary.
 
 Current first-version limitations:
 
-- Planning is mostly rule-based, with optional LLM summary only when a configured API key exists.
+- Planning is mostly rule-based, with optional LLM final summary only when a configured API key exists.
 - It can do short 3-8 step workflows, not long autonomous projects yet.
 - It records observations, but does not yet dynamically redraw the startup UI state.
-- It can choose existing tools only; it cannot invent new tools or execute shell commands.
+- It can choose existing tools only; it cannot invent new tools.
