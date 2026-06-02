@@ -12,6 +12,7 @@ from .base import ProviderConfig
 class OpenAICompatibleProvider:
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
+        self.last_usage: Dict[str, Any] = {}
 
     def _client(self):
         try:
@@ -28,6 +29,7 @@ class OpenAICompatibleProvider:
             temperature=temperature,
             messages=messages,
         )
+        self.last_usage = _usage_to_dict(getattr(response, "usage", None))
         return response.choices[0].message.content or ""
 
     def generate_json(self, messages: List[Dict[str, str]], temperature: float = 0.2) -> Dict[str, Any]:
@@ -47,3 +49,22 @@ def _parse_json_object(text: str) -> Dict[str, Any]:
     if not isinstance(parsed, dict):
         raise RuntimeError("模型 JSON 输出不是对象。")
     return parsed
+
+
+def _usage_to_dict(usage: Any) -> Dict[str, Any]:
+    if not usage:
+        return {}
+    if isinstance(usage, dict):
+        return dict(usage)
+    if hasattr(usage, "model_dump"):
+        try:
+            dumped = usage.model_dump()
+            return dumped if isinstance(dumped, dict) else {}
+        except Exception:
+            pass
+    result: Dict[str, Any] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens"):
+        value = getattr(usage, key, None)
+        if value is not None:
+            result[key] = value
+    return result

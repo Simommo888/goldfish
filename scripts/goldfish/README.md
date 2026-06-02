@@ -292,6 +292,10 @@ goldfish chat
 /run --write-drafts
 /config
 /memory
+/memory review
+/memory context
+/remember I prefer Agent commercialization
+/forget Agent commercialization
 /feedback
 /doctor
 /model
@@ -312,7 +316,17 @@ exit
 goldfish chat --once "/config"
 goldfish chat --once "/dry"
 goldfish chat --no-llm --once "/memory"
+goldfish chat --no-llm --once "/memory review"
+goldfish chat --no-llm --once "/remember I care about MCP commercial opportunities --kind business"
 ```
+
+Memory now follows an explicit Codex-like control model:
+
+- `/remember <text>` saves a user-approved durable memory.
+- `/forget <query>` removes matching memories by id or text.
+- `/memory context` shows the compact context injected into LLM chat and agent loop.
+- `/memory review` audits memory counts, stale candidates, and suggested updates.
+- goldfish does not save API keys, cookies, or private credentials into memory.
 
 瀵硅瘽鍘嗗彶浼氳褰曞埌锛?
 
@@ -524,6 +538,66 @@ goldfish skills jina-search
 ```
 
 瀹夊叏杈圭晫锛氬彧璁块棶鍏紑缃戦〉锛屼笉鐧诲綍銆佷笉淇濆瓨 Cookie銆佷笉缁曡繃鍙嶇埇銆佷笉鍋氭棤闄愰€掑綊鐖彇锛涙棤娉曡闂殑椤甸潰浼氳褰曞け璐ュ師鍥犮€?
+
+## Local RAG Knowledge Base
+
+goldfish can call a local RAG service as its Obsidian / long-term knowledge lookup layer. The default config is:
+
+```text
+scripts/goldfish/config/rag.json
+```
+
+Default endpoint:
+
+```text
+http://127.0.0.1:8020
+```
+
+Your current local RAG project can be started with:
+
+```powershell
+cd D:\github仓库\RAG-Knowledge-Base
+python -m uvicorn main:app --reload --port 8020
+```
+
+Then use:
+
+```powershell
+goldfish rag status
+goldfish rag ask "goldfish 项目是什么"
+goldfish rag search "MCP"
+```
+
+Inside chat:
+
+```text
+/rag goldfish 项目是什么
+/rag-search MCP
+/rag-status
+```
+
+Natural-language requests that clearly mention the local knowledge base, Obsidian, saved notes, or RAG knowledge base can route to `rag_query` automatically:
+
+```text
+从我的知识库里查一下 goldfish 项目
+query my knowledge base about MCP
+```
+
+Routing strategy:
+
+- `rag_query`: answer from the configured local RAG service with source chunks.
+- `rag_search`: return matching source chunks for manual inspection.
+- `rag_status`: check health, stats, document count, chunk count, and config.
+- `web_search`: still handles current/latest/public web information.
+- `search`: remains the local goldfish history/chat/generated-note fallback.
+
+Override the base URL without editing files:
+
+```powershell
+$env:GOLDFISH_RAG_BASE_URL="http://127.0.0.1:8020"
+```
+
+Safety boundary: goldfish only calls the configured local HTTP service. It does not read the RAG database directly, does not send API keys, does not save cookies, and degrades gracefully if the service is down.
 ## 璋冪敤鐪熷疄澶фā鍨?API
 
 鐪熷疄妯″瀷 API 涓嶅啓鍏ラ厤缃枃浠躲€傛帹鑽愪娇鐢細
@@ -660,6 +734,9 @@ Allowed tools:
 - `skills`
 - `web_search`
 - `search`
+- `rag_query`
+- `rag_search`
+- `rag_status`
 - `memory_show`
 - `tools`
 - `doctor`
@@ -673,6 +750,7 @@ Run from the CLI:
 goldfish agent "research MCP server commercial opportunities"
 goldfish agent "study AI coding agent market trends" --no-llm
 goldfish agent "search previous RAG notes" --max-steps 3
+goldfish agent "research latest AI coding agent market" --step-timeout 30 --task-timeout 180 --max-failures 3
 ```
 
 Run inside chat:
@@ -711,6 +789,7 @@ Each workspace contains:
 
 ```text
 goal.md
+failure_policy.json
 plan.md
 plan_revisions.jsonl
 execution_state.json
@@ -721,12 +800,29 @@ tool_calls.jsonl
 final.md
 ```
 
+Failure and timeout policy:
+
+- `agent_step_timeout_seconds`: default maximum wait for one tool step.
+- `agent_task_timeout_seconds`: default maximum wait for the whole agent loop.
+- `agent_max_total_failures`: stop after this many failed observations.
+- `agent_max_consecutive_failures`: stop after this many failed observations in a row.
+
+You can override the defaults with:
+
+```powershell
+goldfish agent "research MCP opportunities" --step-timeout 20 --task-timeout 120 --max-failures 3 --max-consecutive-failures 2
+```
+
+Every observation records `started_at`, `finished_at`, `duration_ms`, `timeout_seconds`, `failure_type`, and `timed_out`. The final `execution_state.json` also includes `failure_policy` and `failure_summary`, so a stopped task can explain whether it ended because the plan completed, max steps were reached, a timeout happened, or the failure budget was exhausted.
+
 Plan/execute behavior:
 
 - If public web research fails, goldfish can revise the plan and fall back to local search.
 - If a daily run fails, goldfish can revise the plan and run `doctor`.
 - If a goal asks for project/code search after listing external tools, goldfish can use the allow-listed `rg_search` wrapper through `external_cli`.
 - `run_daily` defaults to dry-run behavior unless the goal clearly asks to write/save/run for real.
+- If a tool times out, goldfish records a timeout observation instead of waiting forever.
+- If repeated fallbacks keep failing, goldfish stops with `max_total_failures_reached` or `max_consecutive_failures_reached`.
 
 Safety boundaries:
 
@@ -743,3 +839,4 @@ Current first-version limitations:
 - It can do short 3-8 step workflows, not long autonomous projects yet.
 - It records observations, but does not yet dynamically redraw the startup UI state.
 - It can choose existing tools only; it cannot invent new tools.
+- Python thread-based step timeouts cannot forcibly kill a handler that is already running; network and external CLI tools still use their own internal timeouts, and the agent loop records the timeout boundary at the orchestration layer.

@@ -13,7 +13,11 @@
       "tool": "config_check",
       "response_hint": "Config check:",
       "match": {
-        "any": ["config check", "检查配置", "配置检查"]
+        "any": [
+          "config check",
+          "检查配置",
+          "配置检查"
+        ]
       }
     },
     {
@@ -23,7 +27,12 @@
       "tool": "doctor",
       "response_hint": "Doctor report:",
       "match": {
-        "any": ["doctor", "诊断", "体检", "检查运行状态"]
+        "any": [
+          "doctor",
+          "诊断",
+          "体检",
+          "检查运行状态"
+        ]
       }
     },
     {
@@ -33,7 +42,99 @@
       "tool": "memory_show",
       "response_hint": "Agent memory:",
       "match": {
-        "any": ["memory", "记忆", "记住了什么"]
+        "any": [
+          "memory",
+          "记忆",
+          "记住了什么"
+        ]
+      }
+    },
+    {
+      "name": "rag_status",
+      "enabled": true,
+      "priority": 95,
+      "tool": "rag_status",
+      "response_hint": "RAG status:",
+      "match": {
+        "any": [
+          "rag status",
+          "rag health",
+          "rag service",
+          "knowledge base status",
+          "RAG??",
+          "RAG??",
+          "?????"
+        ]
+      }
+    },
+    {
+      "name": "rag_query",
+      "enabled": true,
+      "priority": 88,
+      "tool": "rag_query",
+      "response_hint": "RAG answer:",
+      "query_from_message": true,
+      "query_cleanup": [
+        "ask rag",
+        "query rag",
+        "rag knowledge base",
+        "local rag",
+        "local knowledge base",
+        "my knowledge base",
+        "obsidian",
+        "?????",
+        "????",
+        "?????",
+        "?????",
+        "RAG???",
+        "RAG ???",
+        "????",
+        "????"
+      ],
+      "match": {
+        "any": [
+          "ask rag",
+          "query rag",
+          "rag knowledge base",
+          "local rag",
+          "local knowledge base",
+          "my knowledge base",
+          "obsidian",
+          "?????",
+          "????",
+          "?????",
+          "?????",
+          "RAG???",
+          "RAG ???",
+          "????",
+          "????"
+        ]
+      }
+    },
+    {
+      "name": "rag_search",
+      "enabled": true,
+      "priority": 87,
+      "tool": "rag_search",
+      "response_hint": "RAG search results:",
+      "query_from_message": true,
+      "query_cleanup": [
+        "rag search",
+        "search rag",
+        "??RAG",
+        "??RAG",
+        "?????",
+        "?????"
+      ],
+      "match": {
+        "any": [
+          "rag search",
+          "search rag",
+          "??RAG",
+          "??RAG",
+          "?????",
+          "?????"
+        ]
       }
     },
     {
@@ -43,7 +144,10 @@
       "tool": "feedback_list",
       "response_hint": "Feedback records:",
       "match": {
-        "any": ["feedback", "反馈记录"]
+        "any": [
+          "feedback",
+          "反馈记录"
+        ]
       }
     },
     {
@@ -53,7 +157,11 @@
       "tool": "history",
       "response_hint": "Recent runs:",
       "match": {
-        "any": ["history", "历史记录", "最近运行"]
+        "any": [
+          "history",
+          "历史记录",
+          "最近运行"
+        ]
       }
     },
     {
@@ -107,9 +215,32 @@
           "今日新闻"
         ],
         "all_any": [
-          ["ai", "人工智能", "大模型", "llm"],
-          ["today", "latest", "今天", "今日", "刚刚", "实时", "最新"],
-          ["news", "event", "events", "新闻", "消息", "大事", "动态", "事件", "发生"]
+          [
+            "ai",
+            "人工智能",
+            "大模型",
+            "llm"
+          ],
+          [
+            "today",
+            "latest",
+            "今天",
+            "今日",
+            "刚刚",
+            "实时",
+            "最新"
+          ],
+          [
+            "news",
+            "event",
+            "events",
+            "新闻",
+            "消息",
+            "大事",
+            "动态",
+            "事件",
+            "发生"
+          ]
         ]
       }
     },
@@ -167,9 +298,21 @@
       "tool": "search",
       "response_hint": "Local search results:",
       "query_from_message": true,
-      "query_cleanup": ["search", "本地搜索", "搜索本地", "查历史", "查笔记"],
+      "query_cleanup": [
+        "search",
+        "本地搜索",
+        "搜索本地",
+        "查历史",
+        "查笔记"
+      ],
       "match": {
-        "any": ["search", "本地搜索", "搜索本地", "查历史", "查笔记"]
+        "any": [
+          "search",
+          "本地搜索",
+          "搜索本地",
+          "查历史",
+          "查笔记"
+        ]
       }
     },
     {
@@ -179,7 +322,10 @@
       "tool": "skills",
       "response_hint": "Skills:",
       "match": {
-        "any": ["skills", "技能"]
+        "any": [
+          "skills",
+          "技能"
+        ]
       }
     },
     {
@@ -189,7 +335,12 @@
       "tool": "source_health",
       "response_hint": "Source health:",
       "match": {
-        "any": ["source health", "sources health", "来源健康", "信源健康"]
+        "any": [
+          "source health",
+          "sources health",
+          "来源健康",
+          "信源健康"
+        ]
       }
     },
     {
@@ -199,7 +350,11 @@
       "tool": "tools",
       "response_hint": "Available tools:",
       "match": {
-        "any": ["tools", "工具列表", "有哪些工具"]
+        "any": [
+          "tools",
+          "工具列表",
+          "有哪些工具"
+        ]
       }
     },
     {
@@ -212,7 +367,13 @@
         "action": "list"
       },
       "match": {
-        "any": ["external cli", "external tools", "cli tools", "外部工具", "命令行工具"]
+        "any": [
+          "external cli",
+          "external tools",
+          "cli tools",
+          "外部工具",
+          "命令行工具"
+        ]
       }
     },
     {
@@ -222,7 +383,11 @@
       "tool": "weekly",
       "response_hint": "Weekly run completed:",
       "match": {
-        "any": ["weekly", "每周", "周报"]
+        "any": [
+          "weekly",
+          "每周",
+          "周报"
+        ]
       }
     },
     {
@@ -232,7 +397,12 @@
       "tool": "dry_run",
       "response_hint": "Dry-run completed:",
       "match": {
-        "any": ["dry-run", "dry run", "test run", "试运行"]
+        "any": [
+          "dry-run",
+          "dry run",
+          "test run",
+          "试运行"
+        ]
       }
     },
     {
@@ -242,12 +412,26 @@
       "tool": "run_daily",
       "response_hint": "Daily run completed:",
       "match": {
-        "any": ["daily", "briefing", "report", "run", "日报", "简报", "运行日报"]
+        "any": [
+          "daily",
+          "briefing",
+          "report",
+          "run",
+          "日报",
+          "简报",
+          "运行日报"
+        ]
       },
       "set_flags_when_any": [
         {
-          "keywords": ["draft", "drafts", "草稿"],
-          "args": {"write_drafts": true}
+          "keywords": [
+            "draft",
+            "drafts",
+            "草稿"
+          ],
+          "args": {
+            "write_drafts": true
+          }
         }
       ]
     }

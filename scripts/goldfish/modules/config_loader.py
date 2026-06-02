@@ -22,6 +22,7 @@ class AgentConfig:
     settings: Dict[str, Any]
     llm_prompts: Dict[str, Any]
     agent_profile: Dict[str, Any]
+    response_formats: Dict[str, Any]
     config_dir: Path
 
 
@@ -44,6 +45,7 @@ def load_config(config_dir: Path | None = None) -> AgentConfig:
         settings=load_json_file(config_dir / "settings.json", {}),
         llm_prompts=load_json_file(config_dir / "llm_prompts.json", {}),
         agent_profile=load_json_file(config_dir / "agent_profile.json", {}),
+        response_formats=load_json_file(config_dir / "response_formats.json", {}),
         config_dir=config_dir,
     )
 

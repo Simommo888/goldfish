@@ -86,8 +86,20 @@ def status(action: str, detail: str = "") -> str:
     return f"{orange('><(((o>')} {cream(action)}{suffix}"
 
 
-def prompt(name: str = "gf") -> str:
-    return green(f"{name} > ")
+def telemetry(status_name: str, context_bar: str, tokens: str = "", detail: str = "") -> str:
+    detail_part = f" {dim(detail)}" if detail else ""
+    token_part = f"  {dim(tokens)}" if tokens else ""
+    return f"{orange('><(((o>')} {cream(status_name)}{detail_part}  {water('ctx')} {green(context_bar)}{token_part}"
+
+
+def prompt_telemetry(context_bar: str, tokens: str = "") -> str:
+    token_part = f"  {dim(tokens)}" if tokens else ""
+    return f"{water('ctx')} {green(context_bar)}{token_part}"
+
+
+def prompt(name: str = "gf", telemetry: str = "") -> str:
+    prefix = f"{telemetry}  " if telemetry else ""
+    return prefix + green(f"{name} > ")
 
 
 def farewell() -> str:

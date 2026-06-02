@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "enabled": true,
+  "mode": "http",
+  "base_url": "http://127.0.0.1:8020",
+  "health_endpoint": "/api/health",
+  "stats_endpoint": "/api/rag/stats",
+  "ask_endpoint": "/api/rag/ask",
+  "search_endpoint": "/api/rag/search",
+  "retrieval_mode": "hybrid",
+  "top_k": 8,
+  "use_llm": false,
+  "timeout_seconds": 20,
+  "notes": "Local RAG Knowledge Base service. Override base_url with GOLDFISH_RAG_BASE_URL."
+}

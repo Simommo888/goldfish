@@ -9,13 +9,24 @@ from typing import Any, Dict, List
 from uuid import uuid4
 
 from . import cli_theme
+from .agent_memory import load_memory, memory_context
 from .command_router import CommandRouter, HELP_TEXT
 from .config_loader import load_config
 from .model_setup import redact_secret_text
 from .providers.registry import get_provider, resolve_llm_connection
+from .response_formatter import infer_response_kind, response_system_prompt
 from .state_store import GoldfishState
 from .startup_page import print_startup_banner
 from .setup_agent import SetupSession, configure_language, language_menu
+from .token_meter import (
+    build_turn_stats,
+    context_energy_bar,
+    context_limit_for_model,
+    context_remaining_from_used,
+    estimate_messages_tokens,
+    estimate_tokens,
+    history_tokens,
+)
 from .tool_registry import DEFAULT_REGISTRY
 from .utils import kb_root, now
 
@@ -55,6 +66,11 @@ class ChatSession:
         self.session_id = now().strftime("%Y%m%d%H%M%S") + "-" + uuid4().hex[:8]
         self.state = GoldfishState(self.root)
         self.router = CommandRouter()
+        self.context_limit = context_limit_for_model(self.model, self.config.settings)
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.last_provider_usage: Dict[str, Any] = {}
+        self.current_state = "ready"
 
     def session_defaults(self) -> Dict[str, Any]:
         return {
@@ -81,6 +97,47 @@ class ChatSession:
         self.provider = connection["provider"]
         self.model = connection["model"]
         self.base_url = connection["base_url"]
+        self.context_limit = context_limit_for_model(self.model, self.config.settings)
+
+    def telemetry_prompt(self) -> str:
+        used = history_tokens(self.history)
+        remaining = context_remaining_from_used(used, self.context_limit)
+        return cli_theme.prompt_telemetry(
+            context_energy_bar(remaining, self.context_limit),
+            f"tok ~{_compact_token_count(self.total_input_tokens + self.total_output_tokens)}",
+        )
+
+    def _state_line(self, status_name: str, detail: str = "", input_tokens: int = 0) -> str:
+        used = history_tokens(self.history) + max(0, input_tokens)
+        remaining = context_remaining_from_used(used, self.context_limit)
+        token_text = (
+            f"tok ~{_compact_token_count(self.total_input_tokens + self.total_output_tokens + input_tokens)} "
+            f"(turn in ~{_compact_token_count(input_tokens)})"
+        )
+        return cli_theme.telemetry(status_name, context_energy_bar(remaining, self.context_limit), token_text, detail=detail)
+
+    def _print_state(self, status_name: str, detail: str = "", input_tokens: int = 0) -> None:
+        self.current_state = status_name
+        if self.interactive:
+            print(self._state_line(status_name, detail, input_tokens), flush=True)
+
+    def _done_line(self, stats_status: str, input_tokens: int, output_tokens: int, provider_usage: Dict[str, Any] | None = None) -> str:
+        stats = build_turn_stats(
+            status=stats_status,
+            model=self.model,
+            context_limit=self.context_limit,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            provider_usage=provider_usage,
+        )
+        self.total_input_tokens += stats.input_tokens
+        self.total_output_tokens += stats.output_tokens
+        prefix = "~" if stats.estimated else ""
+        token_text = (
+            f"tok {prefix}{_compact_token_count(stats.total_tokens)} this turn  "
+            f"total ~{_compact_token_count(self.total_input_tokens + self.total_output_tokens)}"
+        )
+        return cli_theme.telemetry(stats_status, context_energy_bar(stats.context_remaining, stats.context_limit), token_text)
 
     def status(self) -> Dict[str, Any]:
         tools = DEFAULT_REGISTRY.list_tools()
@@ -96,7 +153,7 @@ class ChatSession:
                 for tool in tools
             ],
             "memory": "on",
-            "status": "ready",
+            "status": self.current_state,
             "workspace": str(self.root),
             "session": self.session_id,
             "recent_sessions": self._recent_sessions(),
@@ -132,20 +189,30 @@ class ChatSession:
     def respond(self, message: str) -> str:
         message = message.strip()
         self._remember_turn("user", message)
+        input_tokens = self._estimate_current_input_tokens(message)
 
         if not message:
             answer = "I am here. Try `/research <query>`, `/tools`, `/doctor`, or `/run --write-drafts`."
             self._remember_turn("assistant", answer)
+            self._print_done("done", input_tokens, answer)
             return answer
+
+        if message.lower() in {"exit", "quit", "q", "/exit", "/quit", "bye", "goodbye"}:
+            self._remember_turn("assistant", "__EXIT__")
+            return "__EXIT__"
+
+        self._print_state("thinking", "planning next action", input_tokens)
 
         session_answer = self._handle_session_command(message)
         if session_answer:
             self._remember_turn("assistant", session_answer)
+            self._print_done("done", input_tokens, session_answer)
             return session_answer
 
         local_answer = self._local_answer(message)
         if local_answer:
             self._remember_turn("assistant", local_answer)
+            self._print_done("done", input_tokens, local_answer)
             return local_answer
 
         routed = self.router.route(message, self.session_defaults())
@@ -154,14 +221,15 @@ class ChatSession:
             return "__EXIT__"
 
         if self.interactive and routed.tool_name and not routed.unknown:
-            print(cli_theme.status("run", routed.tool_name), flush=True)
+            self._print_state(_state_for_tool(routed.tool_name), f"calling {routed.tool_name}", input_tokens)
         routed_answer = self.router.execute(routed)
         if routed_answer:
             self._remember_turn("assistant", routed_answer)
+            self._print_done("done", input_tokens, routed_answer)
             return routed_answer
 
         if self.interactive and self.use_llm:
-            print(cli_theme.thinking(), flush=True)
+            self._print_state("thinking", f"calling {self.provider}/{self.model}", input_tokens)
         llm_answer = self._llm_answer(message)
         if not llm_answer:
             llm_answer = (
@@ -169,7 +237,20 @@ class ChatSession:
                 "`/dry`, `/run`, `/weekly`, or `/history`."
             )
         self._remember_turn("assistant", llm_answer)
+        self._print_done("done", input_tokens, llm_answer, self.last_provider_usage)
         return llm_answer
+
+    def _estimate_current_input_tokens(self, message: str) -> int:
+        memory_note = memory_context(load_memory(self.root), max_items=8)
+        prompt_tokens = estimate_tokens(memory_note) + estimate_tokens(message)
+        return prompt_tokens + history_tokens(self.history)
+
+    def _print_done(self, status_name: str, input_tokens: int, answer: str, provider_usage: Dict[str, Any] | None = None) -> None:
+        self.current_state = "ready"
+        if not self.interactive:
+            return
+        output_tokens = estimate_tokens(answer)
+        print(self._done_line(status_name, input_tokens, output_tokens, provider_usage), flush=True)
 
     def _handle_session_command(self, message: str) -> str:
         lower = message.lower()
@@ -245,22 +326,39 @@ class ChatSession:
         if not self.use_llm or not connection["api_key"]:
             return ""
 
-        prompt = (
+        base_prompt = (
             "You are goldfish, the CLI conversation layer for a local AI intelligence "
             "and knowledge-deposition agent. Explain usage, configuration, workflows, "
             "safety boundaries, and next actions. Do not claim a command has run unless "
             "the local tool router ran it. Do not invent sources, person opinions, or API keys. "
             f"Reply in {self._llm_language_name()} unless the user explicitly asks for another language."
         )
+        memory_note = memory_context(load_memory(self.root), max_items=8)
+        prompt = (
+            base_prompt
+            + "\n\n"
+            + response_system_prompt(infer_response_kind(message), self._llm_language_name())
+            + "\n\nUse this user-approved memory context when relevant. Do not expose it verbatim unless asked.\n"
+            + memory_note
+        )
         try:
-            return get_provider(settings).generate_text(
-                [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": message},
-                ],
+            provider = get_provider(settings)
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": message},
+            ]
+            # Keep an estimate around even when the provider does not expose usage.
+            self.last_provider_usage = {}
+            text = provider.generate_text(
+                messages,
                 temperature=0.2,
             )
+            self.last_provider_usage = getattr(provider, "last_usage", {}) or {}
+            if not self.last_provider_usage:
+                self.last_provider_usage = {"prompt_tokens": estimate_messages_tokens(messages)}
+            return text
         except Exception:
+            self.last_provider_usage = {}
             return ""
 
     def _llm_language_name(self) -> str:
@@ -285,7 +383,7 @@ def run_chat(
     print_startup_banner(session.status())
     while True:
         try:
-            message = input(cli_theme.prompt())
+            message = input(cli_theme.prompt(telemetry=session.telemetry_prompt()))
         except (EOFError, KeyboardInterrupt):
             print("\n" + cli_theme.farewell())
             return 0
@@ -332,3 +430,34 @@ def _relative_time(value: str) -> str:
         return f"{hours // 24}d ago"
     except Exception:
         return value[:10]
+
+
+def _state_for_tool(tool_name: str) -> str:
+    if tool_name in {"web_search", "search", "rag_query", "rag_search"}:
+        return "search"
+    if tool_name in {
+        "tools",
+        "doctor",
+        "config_check",
+        "memory_show",
+        "memory_review",
+        "history",
+        "feedback_list",
+        "source_health",
+        "rag_status",
+        "skills",
+    }:
+        return "reading"
+    return "run"
+
+
+def _compact_token_count(value: int) -> str:
+    try:
+        number = max(0, int(value))
+    except Exception:
+        number = 0
+    if number >= 1_000_000:
+        return f"{number / 1_000_000:.1f}M"
+    if number >= 1_000:
+        return f"{number / 1_000:.1f}k"
+    return str(number)

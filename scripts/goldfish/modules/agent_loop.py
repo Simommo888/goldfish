@@ -11,20 +11,37 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Protocol
 from uuid import uuid4
 
+from .agent_memory import load_memory, memory_context
 from .config_loader import load_config
 from .model_setup import redact_secret_text
 from .providers.registry import get_provider, resolve_llm_connection
+from .response_formatter import render_agent_summary
 from .skill_router import select_skills
 from .utils import kb_root, now, safe_filename
 
 
-ALLOWED_TOOLS = {"web_search", "search", "memory_show", "tools", "doctor", "dry_run", "run_daily", "external_cli", "skills"}
+ALLOWED_TOOLS = {
+    "web_search",
+    "search",
+    "rag_query",
+    "rag_search",
+    "rag_status",
+    "memory_show",
+    "tools",
+    "doctor",
+    "dry_run",
+    "run_daily",
+    "external_cli",
+    "skills",
+}
 MAX_RESULT_CHARS = 12000
 MAX_TEXT_CHARS = 1800
 
@@ -51,6 +68,22 @@ class PlanRevision:
     created_at: str
 
 
+@dataclass(frozen=True)
+class AgentFailurePolicy:
+    """Bounded execution policy for the local plan/execute loop.
+
+    The loop only calls allow-listed ToolRegistry tools, but individual tools can
+    still fail, stall on network I/O, or return degraded results. This policy is
+    the agent-level guardrail that decides how long to wait and when to stop.
+    """
+
+    step_timeout_seconds: float = 45.0
+    task_timeout_seconds: float = 240.0
+    max_total_failures: int = 4
+    max_consecutive_failures: int = 2
+    step_timeout_overridden: bool = False
+
+
 def run_agent_loop(
     goal: str,
     *,
@@ -59,14 +92,27 @@ def run_agent_loop(
     no_llm: bool = False,
     no_save: bool = False,
     root: Path | None = None,
+    step_timeout: float | None = None,
+    task_timeout: float | None = None,
+    max_failures: int | None = None,
+    max_consecutive_failures: int | None = None,
 ) -> Dict[str, Any]:
     """Run a bounded plan/execute loop and return a structured result."""
 
     root = root or kb_root()
     clean_goal = redact_secret_text(goal.strip())
+    policy = _resolve_failure_policy(
+        step_timeout=step_timeout,
+        task_timeout=task_timeout,
+        max_failures=max_failures,
+        max_consecutive_failures=max_consecutive_failures,
+    )
+    started_perf = time.perf_counter()
+    started_at = datetime.now().isoformat(timespec="seconds")
     task = _create_task_workspace(root, clean_goal)
     step_limit = max(1, min(max_steps, 8))
     selected_skills = select_skills(clean_goal)
+    memory_note = memory_context(load_memory(root), max_items=8)
     plan = make_plan(clean_goal, max_steps=step_limit, no_save=no_save, selected_skills=selected_skills)
     plan_revisions = [_plan_revision_payload(0, "initial plan", plan)]
     observations: List[Dict[str, Any]] = []
@@ -76,15 +122,21 @@ def run_agent_loop(
     _safe_write(task["path"] / "goal.md", f"# Goal\n\n{clean_goal}\n")
     _safe_write(task["path"] / "selected_skills.json", json.dumps(selected_skills, ensure_ascii=False, indent=2))
     _safe_write(task["path"] / "skills.md", _skills_markdown(selected_skills))
+    _safe_write(task["path"] / "memory_context.md", memory_note + "\n")
+    _safe_write(task["path"] / "failure_policy.json", json.dumps(_policy_dict(policy), ensure_ascii=False, indent=2))
     _safe_write(task["path"] / "plan.md", _plan_markdown(clean_goal, plan))
     _append_jsonl(task["path"] / "plan_revisions.jsonl", plan_revisions[0])
-    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "planning", "", selected_skills)
+    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "planning", "", selected_skills, policy, started_at)
 
     cursor = 0
     while cursor < len(plan) and len(observations) < step_limit:
+        if _task_timed_out(started_perf, policy):
+            stop_reason = "task_timeout_reached"
+            break
         planned = plan[cursor]
-        _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "executing", f"step-{planned.step}", selected_skills)
-        observation = _execute_step(planned, registry)
+        _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "executing", f"step-{planned.step}", selected_skills, policy, started_at)
+        effective_timeout = _effective_step_timeout(policy, registry, planned.tool, started_perf)
+        observation = _execute_step(planned, registry, timeout_seconds=effective_timeout)
         observations.append(observation)
         tool_calls.append(
             {
@@ -93,12 +145,24 @@ def run_agent_loop(
                 "args": _redact_jsonable(planned.args),
                 "success": observation.get("success", False),
                 "status": planned.status,
+                "duration_ms": observation.get("duration_ms"),
+                "timeout_seconds": observation.get("timeout_seconds"),
+                "timed_out": observation.get("timed_out", False),
+                "failure_type": observation.get("failure_type"),
             }
         )
         _append_jsonl(task["path"] / "tool_calls.jsonl", tool_calls[-1])
         _safe_write(task["path"] / "observations.json", json.dumps(observations, ensure_ascii=False, indent=2))
 
-        decision = _decide_next(clean_goal, plan, observations, step_limit=step_limit, no_save=no_save)
+        decision = _decide_next(
+            clean_goal,
+            plan,
+            observations,
+            step_limit=step_limit,
+            no_save=no_save,
+            policy=policy,
+            started_perf=started_perf,
+        )
         if decision["action"] == "revise":
             plan = decision["plan"]
             revision = _plan_revision_payload(len(plan_revisions), decision["reason"], plan)
@@ -114,8 +178,9 @@ def run_agent_loop(
     if len(observations) >= step_limit and cursor < len(plan):
         stop_reason = "max_steps_reached"
 
-    summary = _final_answer(clean_goal, plan, observations, no_llm=no_llm)
+    failure_summary = _failure_summary(observations)
     files_written = _collect_files_written(task["path"], observations)
+    summary = _final_answer(clean_goal, plan, observations, no_llm=no_llm, files_written=files_written)
     final = {
         "task_id": task["id"],
         "task_path": str(task["path"]),
@@ -129,12 +194,16 @@ def run_agent_loop(
             "plan_revisions": len(plan_revisions),
             "steps_executed": len(observations),
             "stop_reason": stop_reason,
+            "started_at": started_at,
+            "duration_ms": _elapsed_ms(started_perf),
+            "failure_policy": _policy_dict(policy),
+            "failure_summary": failure_summary,
         },
         "selected_skills": selected_skills,
     }
 
     _safe_write(task["path"] / "observations.json", json.dumps(observations, ensure_ascii=False, indent=2))
-    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "final", stop_reason, selected_skills)
+    _write_execution_state(task["path"], clean_goal, plan, observations, plan_revisions, "final", stop_reason, selected_skills, policy, started_at)
     _safe_write(task["path"] / "final.md", _final_markdown(final, observations))
 
     return {
@@ -147,6 +216,8 @@ def run_agent_loop(
         "observations": observations,
         "plan_revisions": plan_revisions,
         "execution": final["execution"],
+        "failure_policy": _policy_dict(policy),
+        "failure_summary": failure_summary,
         "summary": final["summary"],
         "next_actions": final["next_actions"],
         "files_written": files_written,
@@ -190,6 +261,18 @@ def make_plan(
         steps.append(PlannedStep(len(steps) + 1, "reading", "external_cli", {"action": "list"}, "Goal asks about external CLI tools."))
     if _wants_memory(lowered):
         steps.append(PlannedStep(len(steps) + 1, "reading", "memory_show", {}, "Goal asks to inspect memory."))
+    if _wants_rag_status(lowered):
+        steps.append(PlannedStep(len(steps) + 1, "reading", "rag_status", {}, "Goal asks to inspect local RAG service health."))
+    if _wants_rag_query(lowered):
+        steps.append(
+            PlannedStep(
+                len(steps) + 1,
+                "search",
+                "rag_query",
+                {"question": _strip_rag_words(goal), "top_k": 8},
+                "Goal asks for local RAG/Obsidian knowledge-base context.",
+            )
+        )
     if _wants_local_search(lowered):
         steps.append(
             PlannedStep(
@@ -273,16 +356,27 @@ def _decide_next(
     *,
     step_limit: int,
     no_save: bool,
+    policy: AgentFailurePolicy,
+    started_perf: float,
 ) -> Dict[str, Any]:
     """Decide whether to continue, revise, or stop after an observation."""
 
     if not observations:
         return {"action": "continue", "reason": "no observations yet", "plan": plan}
 
+    if _task_timed_out(started_perf, policy):
+        return {"action": "stop", "reason": "task_timeout_reached", "plan": plan}
+
     if len(observations) >= step_limit:
         return {"action": "stop", "reason": "max_steps_reached", "plan": plan}
 
     last = observations[-1]
+    failures = _failure_summary(observations)
+    if failures["total_failures"] >= policy.max_total_failures:
+        return {"action": "stop", "reason": "max_total_failures_reached", "plan": plan}
+    if failures["consecutive_failures"] >= policy.max_consecutive_failures:
+        return {"action": "stop", "reason": "max_consecutive_failures_reached", "plan": plan}
+
     revised = _revise_plan(goal, plan, observations, step_limit=step_limit, no_save=no_save)
     if revised is not None:
         return {"action": "revise", "reason": revised["reason"], "plan": revised["plan"]}
@@ -324,6 +418,17 @@ def _revise_plan(
             reason="Web research failed or degraded; fall back to local history search.",
         )
         return {"reason": "web_search_failed_add_local_search", "plan": new_plan}
+
+    if last.get("tool") == "rag_query" and not last.get("success") and "search" not in used_tools | planned_tools:
+        new_plan = _insert_next_step(
+            plan,
+            observations,
+            status="search",
+            tool="search",
+            args={"query": _strip_rag_words(goal), "limit": 8},
+            reason="RAG query failed or service is unavailable; fall back to local goldfish search.",
+        )
+        return {"reason": "rag_query_failed_add_local_search", "plan": new_plan}
 
     if last.get("tool") in {"dry_run", "run_daily"} and not last.get("success") and "doctor" not in used_tools | planned_tools:
         new_plan = _insert_next_step(
@@ -371,39 +476,198 @@ def _revise_plan(
     return None
 
 
-def _execute_step(step: PlannedStep, registry: RegistryLike) -> Dict[str, Any]:
-    if step.tool not in ALLOWED_TOOLS:
-        return {
-            "step": step.step,
-            "status": step.status,
-            "tool": step.tool,
-            "reason": step.reason,
-            "success": False,
-            "error": "tool is not allow-listed",
-        }
+def _resolve_failure_policy(
+    *,
+    step_timeout: float | None = None,
+    task_timeout: float | None = None,
+    max_failures: int | None = None,
+    max_consecutive_failures: int | None = None,
+) -> AgentFailurePolicy:
     try:
-        result = registry.execute(step.tool, step.args)
-        return {
-            "step": step.step,
-            "status": step.status,
-            "tool": step.tool,
-            "reason": step.reason,
-            "success": result.get("status", "ok") != "error",
-            "result": _truncate_json(result),
-        }
+        settings = load_config().settings
+    except Exception:
+        settings = {}
+    step_overridden = step_timeout is not None
+    return AgentFailurePolicy(
+        step_timeout_seconds=_float_range(
+            step_timeout if step_timeout is not None else settings.get("agent_step_timeout_seconds", 45),
+            45.0,
+            min_value=0.05,
+            max_value=600.0,
+        ),
+        task_timeout_seconds=_float_range(
+            task_timeout if task_timeout is not None else settings.get("agent_task_timeout_seconds", 240),
+            240.0,
+            min_value=5.0,
+            max_value=7200.0,
+        ),
+        max_total_failures=_int_range(
+            max_failures if max_failures is not None else settings.get("agent_max_total_failures", 4),
+            4,
+            min_value=1,
+            max_value=20,
+        ),
+        max_consecutive_failures=_int_range(
+            max_consecutive_failures if max_consecutive_failures is not None else settings.get("agent_max_consecutive_failures", 2),
+            2,
+            min_value=1,
+            max_value=10,
+        ),
+        step_timeout_overridden=step_overridden,
+    )
+
+
+def _policy_dict(policy: AgentFailurePolicy) -> Dict[str, Any]:
+    return {
+        "step_timeout_seconds": policy.step_timeout_seconds,
+        "task_timeout_seconds": policy.task_timeout_seconds,
+        "max_total_failures": policy.max_total_failures,
+        "max_consecutive_failures": policy.max_consecutive_failures,
+        "step_timeout_overridden": policy.step_timeout_overridden,
+    }
+
+
+def _effective_step_timeout(policy: AgentFailurePolicy, registry: RegistryLike, tool_name: str, started_perf: float) -> float:
+    timeout = policy.step_timeout_seconds
+    if not policy.step_timeout_overridden:
+        tool_timeout = _registry_tool_timeout(registry, tool_name)
+        if tool_timeout is not None:
+            timeout = tool_timeout
+    remaining = _remaining_task_seconds(started_perf, policy)
+    if remaining is not None:
+        timeout = min(timeout, remaining)
+    return max(0.001, timeout)
+
+
+def _registry_tool_timeout(registry: RegistryLike, tool_name: str) -> float | None:
+    tools = getattr(registry, "tools", None)
+    if not isinstance(tools, dict):
+        return None
+    spec = tools.get(tool_name)
+    value = getattr(spec, "timeout_seconds", None)
+    if value is None:
+        return None
+    return _float_range(value, 45.0, min_value=0.05, max_value=600.0)
+
+
+def _remaining_task_seconds(started_perf: float, policy: AgentFailurePolicy) -> float | None:
+    if policy.task_timeout_seconds <= 0:
+        return None
+    return max(0.0, policy.task_timeout_seconds - (time.perf_counter() - started_perf))
+
+
+def _task_timed_out(started_perf: float, policy: AgentFailurePolicy) -> bool:
+    remaining = _remaining_task_seconds(started_perf, policy)
+    return remaining is not None and remaining <= 0
+
+
+def _failure_summary(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    failures = [obs for obs in observations if not obs.get("success")]
+    consecutive = 0
+    for obs in reversed(observations):
+        if obs.get("success"):
+            break
+        consecutive += 1
+    return {
+        "total_failures": len(failures),
+        "consecutive_failures": consecutive,
+        "timeouts": sum(1 for obs in failures if obs.get("failure_type") == "timeout" or obs.get("timed_out")),
+        "tool_errors": sum(1 for obs in failures if obs.get("failure_type") == "tool_error"),
+        "exceptions": sum(1 for obs in failures if obs.get("failure_type") == "exception"),
+    }
+
+
+def _elapsed_ms(started_perf: float) -> int:
+    return int((time.perf_counter() - started_perf) * 1000)
+
+
+def _float_range(value: Any, default: float, *, min_value: float, max_value: float) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        number = default
+    return max(min_value, min(max_value, number))
+
+
+def _int_range(value: Any, default: int, *, min_value: int, max_value: int) -> int:
+    try:
+        number = int(value)
+    except Exception:
+        number = default
+    return max(min_value, min(max_value, number))
+
+
+def _execute_step(step: PlannedStep, registry: RegistryLike, *, timeout_seconds: float) -> Dict[str, Any]:
+    started_at = datetime.now().isoformat(timespec="seconds")
+    started_perf = time.perf_counter()
+    base = {
+        "step": step.step,
+        "status": step.status,
+        "tool": step.tool,
+        "reason": step.reason,
+        "started_at": started_at,
+        "attempt": 1,
+        "timeout_seconds": round(timeout_seconds, 3),
+        "_started_perf": started_perf,
+    }
+    if step.tool not in ALLOWED_TOOLS:
+        return _finish_observation(
+            base,
+            success=False,
+            error="tool is not allow-listed",
+            failure_type="not_allow_listed",
+        )
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"goldfish-{step.tool}")
+    try:
+        future = executor.submit(registry.execute, step.tool, step.args)
+        result = future.result(timeout=max(0.001, timeout_seconds))
+        return _finish_observation(
+            base,
+            success=result.get("status", "ok") != "error",
+            result=_truncate_json(result),
+            failure_type="tool_error" if result.get("status") == "error" else None,
+            error=result.get("error") if isinstance(result, dict) and result.get("status") == "error" else None,
+        )
+    except FutureTimeoutError:
+        return _finish_observation(
+            base,
+            success=False,
+            error=f"tool timed out after {round(timeout_seconds, 3)}s",
+            failure_type="timeout",
+            timed_out=True,
+        )
     except Exception as exc:
-        return {
-            "step": step.step,
-            "status": step.status,
-            "tool": step.tool,
-            "reason": step.reason,
-            "success": False,
-            "error": str(exc),
-        }
+        return _finish_observation(
+            base,
+            success=False,
+            error=str(exc),
+            failure_type="exception",
+        )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
-def _final_answer(goal: str, plan: List[PlannedStep], observations: List[Dict[str, Any]], *, no_llm: bool) -> Dict[str, Any]:
-    rule_answer = _rule_final(goal, observations)
+def _finish_observation(base: Dict[str, Any], **updates: Any) -> Dict[str, Any]:
+    started_perf = float(base.get("_started_perf") or time.perf_counter())
+    payload = {key: value for key, value in base.items() if not key.startswith("_")}
+    payload.update({key: value for key, value in updates.items() if value is not None})
+    payload.setdefault("timed_out", False)
+    payload["finished_at"] = datetime.now().isoformat(timespec="seconds")
+    payload["duration_ms"] = _elapsed_ms(started_perf)
+    if not payload.get("success") and "failure_type" not in payload:
+        payload["failure_type"] = "tool_error"
+    return payload
+
+
+def _final_answer(
+    goal: str,
+    plan: List[PlannedStep],
+    observations: List[Dict[str, Any]],
+    *,
+    no_llm: bool,
+    files_written: List[str] | None = None,
+) -> Dict[str, Any]:
+    rule_answer = _rule_final(goal, observations, files_written=files_written)
     if no_llm:
         return rule_answer
     config = load_config()
@@ -412,7 +676,9 @@ def _final_answer(goal: str, plan: List[PlannedStep], observations: List[Dict[st
         return rule_answer
     prompt = (
         "You are goldfish's local agent loop. Summarize the completed tool observations. "
-        "Do not invent sources, files, or API keys. Return concise JSON with keys summary and next_actions."
+        "Do not invent sources, files, or API keys. Return concise JSON with keys summary and next_actions. "
+        "The summary value must be Markdown following the fixed Goldfish answer frame: "
+        "header, conclusion, execution record, key observations, products, next actions."
     )
     payload = {
         "goal": goal,
@@ -436,15 +702,7 @@ def _final_answer(goal: str, plan: List[PlannedStep], observations: List[Dict[st
         return rule_answer
 
 
-def _rule_final(goal: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]:
-    successful = [obs for obs in observations if obs.get("success")]
-    failed = [obs for obs in observations if not obs.get("success")]
-    tools = ", ".join(obs.get("tool", "") for obs in observations) or "none"
-    summary = f"Agent loop handled the goal with {len(observations)} step(s). Tools used: {tools}."
-    if successful:
-        summary += f" Successful steps: {len(successful)}."
-    if failed:
-        summary += f" Failed/degraded steps: {len(failed)}."
+def _rule_final(goal: str, observations: List[Dict[str, Any]], *, files_written: List[str] | None = None) -> Dict[str, Any]:
     next_actions = [
         "Review the task workspace observations.",
         "Open any generated Markdown reports or drafts before treating them as final.",
@@ -452,6 +710,7 @@ def _rule_final(goal: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]
     ]
     if _wants_research(goal.lower()):
         next_actions.insert(0, "Verify high-value web sources before converting them into permanent notes or business ideas.")
+    summary = render_agent_summary(goal, observations, next_actions[:5], files_written=files_written)
     return {"summary": summary, "next_actions": next_actions[:5]}
 
 
@@ -509,6 +768,46 @@ def _preferred_search_provider(text: str) -> str:
     if "duckduckgo" in text or "ddg" in text:
         return "duckduckgo"
     return "auto"
+
+
+def _wants_rag_status(text: str) -> bool:
+    return any(
+        word in text
+        for word in [
+            "rag status",
+            "rag health",
+            "rag service",
+            "knowledge base status",
+            "知识库状态",
+            "rag状态",
+            "rag服务",
+        ]
+    )
+
+
+def _wants_rag_query(text: str) -> bool:
+    return any(
+        word in text
+        for word in [
+            "rag knowledge base",
+            "local rag",
+            "local knowledge base",
+            "my knowledge base",
+            "obsidian",
+            "saved notes",
+            "previous notes",
+            "knowledge base notes",
+            "本地知识库",
+            "我的知识库",
+            "rag知识库",
+            "rag 知识库",
+            "知识库里",
+            "知识库中",
+            "之前的笔记",
+            "已有笔记",
+            "沉淀内容",
+        ]
+    )
 
 
 def _create_task_workspace(root: Path, goal: str) -> Dict[str, Any]:
@@ -593,17 +892,22 @@ def _write_execution_state(
     phase: str,
     stop_reason: str,
     selected_skills: List[Dict[str, Any]] | None = None,
+    policy: AgentFailurePolicy | None = None,
+    started_at: str | None = None,
 ) -> None:
     payload = {
         "mode": "plan_execute",
         "phase": phase,
         "goal": goal,
+        "started_at": started_at,
         "selected_skills": [{"name": skill.get("name"), "reason": skill.get("reason")} for skill in (selected_skills or [])],
         "current_step": len(observations) + 1 if phase == "executing" else None,
         "steps_planned": len(plan),
         "steps_executed": len(observations),
         "plan_revision": len(plan_revisions) - 1,
         "stop_reason": stop_reason,
+        "failure_policy": _policy_dict(policy) if policy else None,
+        "failure_summary": _failure_summary(observations),
         "plan": [_step_dict(step) for step in plan],
     }
     _safe_write(task_path / "execution_state.json", json.dumps(payload, ensure_ascii=False, indent=2))
@@ -618,6 +922,8 @@ def _final_markdown(final: Dict[str, Any], observations: List[Dict[str, Any]]) -
         f"- mode: {final['execution']['mode']}",
         f"- stop_reason: {final['execution']['stop_reason']}",
         f"- plan_revisions: {final['execution']['plan_revisions']}",
+        f"- duration_ms: {final['execution'].get('duration_ms')}",
+        f"- failures: {final['execution'].get('failure_summary', {}).get('total_failures', 0)} total / {final['execution'].get('failure_summary', {}).get('consecutive_failures', 0)} consecutive",
         "",
         "## Selected Skills",
         "",
@@ -652,6 +958,8 @@ def _collect_files_written(task_path: Path, observations: List[Dict[str, Any]]) 
             "goal.md",
             "skills.md",
             "selected_skills.json",
+            "memory_context.md",
+            "failure_policy.json",
             "plan.md",
             "observations.json",
             "tool_calls.jsonl",
@@ -798,4 +1106,17 @@ def _strip_intent_words(goal: str) -> str:
         flags=re.I,
     )
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or goal.strip()
+
+
+def _strip_rag_words(goal: str) -> str:
+    cleaned = re.sub(
+        r"\b(rag knowledge base|local rag|local knowledge base|my knowledge base|obsidian|saved notes|previous notes|knowledge base notes|please|help me)\b",
+        " ",
+        goal,
+        flags=re.I,
+    )
+    for marker in ["本地知识库", "我的知识库", "rag知识库", "RAG知识库", "rag 知识库", "RAG 知识库", "知识库里", "知识库中", "之前的笔记", "已有笔记", "沉淀内容"]:
+        cleaned = cleaned.replace(marker, " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ：:，,")
     return cleaned or goal.strip()

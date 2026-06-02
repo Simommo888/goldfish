@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 
 from modules.conversation_agent import run_chat
 from modules.doctor_view import print_doctor_report
+from modules.response_formatter import format_tool_response
 from modules.setup_agent import run_setup
 from modules.tool_registry import DEFAULT_REGISTRY
 
@@ -103,7 +104,12 @@ def command_doctor(namespace: argparse.Namespace) -> int:
 def command_agent(namespace: argparse.Namespace) -> int:
     payload = _namespace_to_payload(namespace)
     payload["goal"] = namespace.goal
-    return _print_json(DEFAULT_REGISTRY.execute("agent", payload))
+    result = DEFAULT_REGISTRY.execute("agent", payload)
+    formatted = format_tool_response("agent", result, "Agent loop completed:")
+    if formatted:
+        _print_text(formatted)
+        return 0
+    return _print_json(result)
 
 
 def command_external(namespace: argparse.Namespace) -> int:
@@ -163,7 +169,18 @@ def build_parser() -> argparse.ArgumentParser:
     memory_parser = subparsers.add_parser("memory", help="Memory commands")
     memory_sub = memory_parser.add_subparsers(dest="subcommand", required=True)
     memory_show = memory_sub.add_parser("show", help="Show agent memory")
+    memory_show.add_argument("--context", action="store_true", help="Include compact prompt context")
     memory_show.set_defaults(func=lambda ns: command_tool("memory_show", ns))
+    memory_remember = memory_sub.add_parser("remember", help="Save a durable user-approved memory")
+    memory_remember.add_argument("text", help="Memory text to save")
+    memory_remember.add_argument("--kind", default="fact", help="Memory kind, e.g. preference/project/business/fact")
+    memory_remember.add_argument("--tags", help="Comma-separated tags")
+    memory_remember.set_defaults(func=lambda ns: command_tool("memory_remember", ns))
+    memory_forget = memory_sub.add_parser("forget", help="Forget memories matching text or id")
+    memory_forget.add_argument("query", help="Text or id to forget")
+    memory_forget.set_defaults(func=lambda ns: command_tool("memory_forget", ns))
+    memory_review = memory_sub.add_parser("review", help="Review memory health")
+    memory_review.set_defaults(func=lambda ns: command_tool("memory_review", ns))
 
     feedback_parser = subparsers.add_parser("feedback", help="Feedback commands")
     feedback_sub = feedback_parser.add_subparsers(dest="subcommand", required=True)
@@ -178,6 +195,24 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query, e.g. MCP or AI Coding commercialization")
     search_parser.add_argument("--limit", type=int, default=20, help="How many results to show")
     search_parser.set_defaults(func=lambda ns: command_tool("search", ns))
+
+    rag_parser = subparsers.add_parser("rag", help="Ask or search the configured local RAG knowledge base")
+    rag_sub = rag_parser.add_subparsers(dest="subcommand", required=True)
+    rag_ask = rag_sub.add_parser("ask", help="Ask the local RAG knowledge base")
+    rag_ask.add_argument("question", help="Question for the RAG knowledge base")
+    rag_ask.add_argument("--top-k", type=int, help="How many chunks to retrieve")
+    rag_ask.add_argument("--retrieval-mode", choices=["keyword", "vector", "hybrid"], help="Retrieval mode")
+    rag_ask.add_argument("--category", default="all", help="Knowledge-base category")
+    rag_ask.add_argument("--use-llm", action="store_true", help="Let the RAG service use its own LLM answer mode")
+    rag_ask.set_defaults(func=lambda ns: command_tool("rag_query", ns))
+    rag_search = rag_sub.add_parser("search", help="Search local RAG source chunks")
+    rag_search.add_argument("query", help="Search query")
+    rag_search.add_argument("--top-k", type=int, help="How many chunks to retrieve")
+    rag_search.add_argument("--retrieval-mode", choices=["keyword", "vector", "hybrid"], help="Retrieval mode")
+    rag_search.add_argument("--category", default="all", help="Knowledge-base category")
+    rag_search.set_defaults(func=lambda ns: command_tool("rag_search", ns))
+    rag_status = rag_sub.add_parser("status", help="Check RAG service status")
+    rag_status.set_defaults(func=lambda ns: command_tool("rag_status", ns))
 
     web_parser = subparsers.add_parser("web", help="Search the public web and return result links")
     web_parser.add_argument("query", help="Public web search query")
@@ -203,6 +238,10 @@ def build_parser() -> argparse.ArgumentParser:
     agent_parser.add_argument("--no-llm", action="store_true", help="Disable LLM planning/final summary")
     agent_parser.add_argument("--max-steps", type=int, default=5, help="Maximum agent steps, 1-8")
     agent_parser.add_argument("--no-save", action="store_true", help="Do not let delegated tools save optional reports")
+    agent_parser.add_argument("--step-timeout", type=float, help="Maximum seconds to wait for one agent tool step")
+    agent_parser.add_argument("--task-timeout", type=float, help="Maximum seconds to wait for the whole agent loop")
+    agent_parser.add_argument("--max-failures", type=int, help="Stop after this many failed tool observations")
+    agent_parser.add_argument("--max-consecutive-failures", type=int, help="Stop after this many failed observations in a row")
     agent_parser.set_defaults(func=command_agent)
 
     tools_parser = subparsers.add_parser("tools", help="List available local tools")

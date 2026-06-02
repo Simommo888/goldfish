@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  goldfish:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: goldfish-agent
+
+    # Mount points for knowledge base and outputs
+    volumes:
+      # Knowledge base directories
+      - ./01_Dashboard:/app/01_Dashboard
+      - ./02_Projects:/app/02_Projects
+      - ./04_Resources:/app/04_Resources
+      - ./05_Permanent-Notes:/app/05_Permanent-Notes
+      - ./09_Prompts:/app/09_Prompts
+      - ./11_Business-Ideas:/app/11_Business-Ideas
+
+      # Config
+      - ./scripts/goldfish/config:/app/scripts/goldfish/config
+
+      # Output cache
+      - ./scripts/goldfish/output_cache:/app/scripts/goldfish/output_cache
+
+    # Environment variables
+    environment:
+      # API Keys (set these via docker-compose.override.yml or .env file)
+      # DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # AI_NEWS_LLM_API_KEY: ${AI_NEWS_LLM_API_KEY}
+
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+
+    # Keep container running for interactive use
+    stdin_open: true
+    tty: true
+
+    # Don't auto-restart; start manually
+    restart: "no"
+
+  # Optional: Lightweight web interface for viewing reports (if added)
+  # goldfish-ui:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./04_Resources/AI-News:/usr/share/nginx/html:ro
+  #   depends_on:
+  #     - goldfish

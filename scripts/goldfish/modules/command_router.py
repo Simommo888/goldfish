@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from .intent_router import route_intent
+from .response_formatter import format_tool_response
 from .tool_planner import plan_tool
 from .tool_registry import DEFAULT_REGISTRY, ToolRegistry
 
@@ -53,6 +54,9 @@ class CommandRouter:
         if routed.unknown:
             return ""
         result = self.registry.execute(routed.tool_name, routed.args)
+        formatted = format_tool_response(routed.tool_name, result, routed.response_hint)
+        if formatted:
+            return formatted
         body = json.dumps(result, ensure_ascii=False, indent=2)
         return f"{routed.response_hint}\n{body}" if routed.response_hint else body
 
@@ -76,7 +80,21 @@ class CommandRouter:
         if command == "/doctor":
             return RoutedCommand("doctor", {}, "Doctor report:")
         if command == "/memory":
+            if rest and str(rest[0]).lower() == "review":
+                return RoutedCommand("memory_review", {}, "Memory review:")
+            if rest and str(rest[0]).lower() == "context":
+                return RoutedCommand("memory_show", {"context": True}, "Agent memory:")
             return RoutedCommand("memory_show", {}, "Agent memory:")
+        if command == "/remember":
+            parsed = _parse_flags(rest)
+            memory_parts = _positional_parts(rest)
+            parsed.setdefault("text", " ".join(memory_parts).strip())
+            return RoutedCommand("memory_remember", parsed, "Memory saved:")
+        if command == "/forget":
+            parsed = _parse_flags(rest)
+            query_parts = _positional_parts(rest)
+            parsed.setdefault("query", " ".join(query_parts).strip())
+            return RoutedCommand("memory_forget", parsed, "Memory updated:")
         if command == "/feedback":
             return RoutedCommand("feedback_list", {}, "Feedback records:")
         if command == "/history":
@@ -87,6 +105,18 @@ class CommandRouter:
             query_parts = _positional_parts(rest)
             parsed.setdefault("query", " ".join(query_parts).strip())
             return RoutedCommand("search", parsed, "Local search results:")
+        if command == "/rag":
+            parsed = _parse_flags(rest)
+            query_parts = _positional_parts(rest)
+            parsed.setdefault("question", " ".join(query_parts).strip())
+            return RoutedCommand("rag_query", parsed, "RAG answer:")
+        if command == "/rag-search":
+            parsed = _parse_flags(rest)
+            query_parts = _positional_parts(rest)
+            parsed.setdefault("query", " ".join(query_parts).strip())
+            return RoutedCommand("rag_search", parsed, "RAG search results:")
+        if command == "/rag-status":
+            return RoutedCommand("rag_status", {}, "RAG status:")
         if command in {"/web", "/web-search"}:
             parsed = _parse_flags(rest)
             query_parts = _positional_parts(rest)
@@ -201,9 +231,15 @@ HELP_TEXT = """goldfish commands:
 /config             Validate configuration
 /doctor             Diagnose Python, package, model, config, paths, sources, and Actions
 /memory             Show agent memory
+/memory review      Review memory health and suggested updates
+/remember <text>    Save a durable user-approved memory
+/forget <query>     Forget memories matching text or id
 /feedback           Show feedback records
 /history            Show recent runs
 /search <query>     Search local goldfish history and generated notes
+/rag <question>     Ask the configured local RAG knowledge base
+/rag-search <query> Search source chunks in the configured local RAG service
+/rag-status         Check local RAG service health and stats
 /web <query>        Search the public web and return links
 /research <query>   Search the public web, fetch accessible pages, and save a report
 /agent <goal>       Plan and run a bounded goal-driven agent loop

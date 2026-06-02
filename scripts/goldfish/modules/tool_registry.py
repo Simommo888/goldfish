@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
 from .agent_kernel import AgentKernel, RunOptions
-from .agent_memory import load_memory, memory_path
+from .agent_memory import forget_memory, load_memory, memory_context, memory_path, remember_memory, review_memory
 from .config_loader import load_config
 from .external_cli import list_external_tools, run_external_tool
 from .feedback_tracker import read_feedback_reports
 from .providers.registry import resolve_llm_connection
+from .rag_client import rag_query, rag_search, rag_status
 from .search_engine import search_goldfish
 from .skill_loader import list_skills, load_skill, skills_dir
 from .state_store import GoldfishState
@@ -31,6 +32,7 @@ class ToolSpec:
     mutating: bool
     handler: ToolHandler
     allowed_paths: tuple[str, ...] = ()
+    timeout_seconds: int | None = None
 
 
 class ToolRegistry:
@@ -48,6 +50,7 @@ class ToolRegistry:
                 "description": spec.description,
                 "mutating": spec.mutating,
                 "allowed_paths": list(spec.allowed_paths),
+                "timeout_seconds": spec.timeout_seconds,
             }
             for spec in self.tools.values()
         ]
@@ -78,6 +81,7 @@ class ToolRegistry:
                     "02_Projects/AI-News-Ideas",
                     "scripts/goldfish/output_cache",
                 ),
+                timeout_seconds=180,
             )
         )
         self.register(
@@ -86,6 +90,7 @@ class ToolRegistry:
                 description="Run the workflow without writing Obsidian files.",
                 mutating=False,
                 handler=_tool_dry_run,
+                timeout_seconds=120,
             )
         )
         self.register(
@@ -95,14 +100,21 @@ class ToolRegistry:
                 mutating=True,
                 handler=_tool_weekly,
                 allowed_paths=("04_Resources/AI-News/Weekly", "scripts/goldfish/output_cache"),
+                timeout_seconds=180,
             )
         )
-        self.register(ToolSpec(name="config_check", description="Validate and summarize config.", mutating=False, handler=_tool_config_check))
-        self.register(ToolSpec(name="doctor", description="Diagnose runtime, config, keys, and writable paths.", mutating=False, handler=_tool_doctor))
-        self.register(ToolSpec(name="memory_show", description="Show agent memory.", mutating=False, handler=_tool_memory_show))
-        self.register(ToolSpec(name="feedback_list", description="List checked feedback reports.", mutating=False, handler=_tool_feedback_list))
-        self.register(ToolSpec(name="history", description="Show recent goldfish runs from SQLite state.", mutating=False, handler=_tool_history))
-        self.register(ToolSpec(name="search", description="Search historical intelligence, insights, notes, and chat messages.", mutating=False, handler=_tool_search))
+        self.register(ToolSpec(name="config_check", description="Validate and summarize config.", mutating=False, handler=_tool_config_check, timeout_seconds=20))
+        self.register(ToolSpec(name="doctor", description="Diagnose runtime, config, keys, and writable paths.", mutating=False, handler=_tool_doctor, timeout_seconds=60))
+        self.register(ToolSpec(name="memory_show", description="Show agent memory.", mutating=False, handler=_tool_memory_show, timeout_seconds=15))
+        self.register(ToolSpec(name="memory_remember", description="Save a durable user-approved memory.", mutating=True, handler=_tool_memory_remember, timeout_seconds=15))
+        self.register(ToolSpec(name="memory_forget", description="Forget matching durable memories.", mutating=True, handler=_tool_memory_forget, timeout_seconds=15))
+        self.register(ToolSpec(name="memory_review", description="Review memory health and suggested updates.", mutating=False, handler=_tool_memory_review, timeout_seconds=20))
+        self.register(ToolSpec(name="feedback_list", description="List checked feedback reports.", mutating=False, handler=_tool_feedback_list, timeout_seconds=20))
+        self.register(ToolSpec(name="history", description="Show recent goldfish runs from SQLite state.", mutating=False, handler=_tool_history, timeout_seconds=20))
+        self.register(ToolSpec(name="search", description="Search historical intelligence, insights, notes, and chat messages.", mutating=False, handler=_tool_search, timeout_seconds=30))
+        self.register(ToolSpec(name="rag_query", description="Ask the configured local RAG knowledge base and return an answer with source chunks.", mutating=False, handler=_tool_rag_query, timeout_seconds=45))
+        self.register(ToolSpec(name="rag_search", description="Search the configured local RAG knowledge base for matching source chunks.", mutating=False, handler=_tool_rag_search, timeout_seconds=45))
+        self.register(ToolSpec(name="rag_status", description="Check local RAG service health, stats, and configuration.", mutating=False, handler=_tool_rag_status, timeout_seconds=20))
         self.register(
             ToolSpec(
                 name="web_search",
@@ -110,11 +122,12 @@ class ToolRegistry:
                 mutating=True,
                 handler=_tool_web_search,
                 allowed_paths=("04_Resources/AI-News/Reports",),
+                timeout_seconds=75,
             )
         )
-        self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills))
-        self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli))
-        self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health))
+        self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills, timeout_seconds=10))
+        self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli, timeout_seconds=60))
+        self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health, timeout_seconds=30))
         self.register(
             ToolSpec(
                 name="agent",
@@ -122,9 +135,10 @@ class ToolRegistry:
                 mutating=True,
                 handler=_tool_agent_loop,
                 allowed_paths=("scripts/goldfish/output_cache/tasks", "04_Resources/AI-News/Reports"),
+                timeout_seconds=300,
             )
         )
-        self.register(ToolSpec(name="tools", description="List available tools.", mutating=False, handler=lambda _: {"tools": self.list_tools()}))
+        self.register(ToolSpec(name="tools", description="List available tools.", mutating=False, handler=lambda _: {"tools": self.list_tools()}, timeout_seconds=5))
 
 
 def _options_from_payload(payload: Dict[str, Any], *, dry_run: bool = False, weekly: bool = False) -> RunOptions:
@@ -179,8 +193,32 @@ def _tool_config_check(_: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _tool_memory_show(_: Dict[str, Any]) -> Dict[str, Any]:
-    return {"path": str(memory_path(kb_root())), "memory": load_memory(kb_root())}
+def _tool_memory_show(payload: Dict[str, Any]) -> Dict[str, Any]:
+    memory = load_memory(kb_root())
+    result = {"path": str(memory_path(kb_root())), "memory": memory}
+    if bool(payload.get("context", False)):
+        result["context"] = memory_context(memory)
+    return result
+
+
+def _tool_memory_remember(payload: Dict[str, Any]) -> Dict[str, Any]:
+    text = str(payload.get("text") or payload.get("memory") or "").strip()
+    kind = str(payload.get("kind") or "fact").strip()
+    tags = payload.get("tags")
+    if isinstance(tags, str):
+        tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    if not isinstance(tags, list):
+        tags = None
+    return remember_memory(text, kind=kind, tags=tags, root=kb_root())
+
+
+def _tool_memory_forget(payload: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(payload.get("query") or payload.get("text") or "").strip()
+    return forget_memory(query, root=kb_root())
+
+
+def _tool_memory_review(_: Dict[str, Any]) -> Dict[str, Any]:
+    return review_memory(kb_root())
 
 
 def _tool_feedback_list(_: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,6 +246,31 @@ def _tool_search(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"query": query, "count": 0, "results": [], "error": "query is required"}
     limit = int(payload.get("limit", 20) or 20)
     return search_goldfish(query, limit=limit, root=kb_root())
+
+
+def _tool_rag_query(payload: Dict[str, Any]) -> Dict[str, Any]:
+    question = str(payload.get("question") or payload.get("query") or "").strip()
+    return rag_query(
+        question,
+        top_k=payload.get("top_k") or payload.get("limit"),
+        retrieval_mode=payload.get("retrieval_mode"),
+        category=str(payload.get("category") or "all"),
+        use_llm=payload.get("use_llm"),
+    )
+
+
+def _tool_rag_search(payload: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(payload.get("query") or payload.get("question") or "").strip()
+    return rag_search(
+        query,
+        top_k=payload.get("top_k") or payload.get("limit"),
+        retrieval_mode=payload.get("retrieval_mode"),
+        category=str(payload.get("category") or "all"),
+    )
+
+
+def _tool_rag_status(_: Dict[str, Any]) -> Dict[str, Any]:
+    return rag_status()
 
 
 def _tool_web_search(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -335,6 +398,10 @@ def _tool_agent_loop(payload: Dict[str, Any]) -> Dict[str, Any]:
             no_llm=bool(payload.get("no_llm", False)),
             no_save=bool(payload.get("no_save", False)),
             root=kb_root(),
+            step_timeout=payload.get("step_timeout") or payload.get("step_timeout_seconds"),
+            task_timeout=payload.get("task_timeout") or payload.get("task_timeout_seconds"),
+            max_failures=payload.get("max_failures") or payload.get("max_total_failures"),
+            max_consecutive_failures=payload.get("max_consecutive_failures"),
         ),
     }
 
@@ -386,6 +453,7 @@ def _tool_doctor(_: Dict[str, Any]) -> Dict[str, Any]:
             "names": [tool["name"] for tool in list_external_tools()],
         },
         "search_providers": _search_provider_status(),
+        "rag": rag_status(),
         "provider": connection["provider"],
         "model": connection["model"],
         "base_url": connection["base_url"] or "default",
@@ -454,6 +522,7 @@ def _config_file_status() -> Dict[str, bool]:
         "external_tools.json",
         "search_providers.json",
         "tool_intents.json",
+        "rag.json",
     ]
     status: Dict[str, bool] = {}
     for name in names:

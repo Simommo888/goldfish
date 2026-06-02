@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "default_language": "zh-CN",
+  "design_notes": {
+    "inspiration": [
+      "Codex: answer with execution state, files changed, verification, and next step.",
+      "Claude Code: separate plan, action, observation, and final answer.",
+      "Hermes: compact terminal panels, status metadata, and readable sections.",
+      "Goldfish: dark terminal feeling, orange/cyan/green labels, concise memory-first knowledge deposition."
+    ],
+    "terminal_style": "Use a compact goldfish header, Markdown sections, and no emoji-dependent layout."
+  },
+  "global_rules": [
+    "Answer the user's actual question first.",
+    "Do not invent sources, files, commands, API keys, or model capabilities.",
+    "Separate verified facts from judgment or suggestions.",
+    "For current information, cite public sources or clearly say when evidence is missing.",
+    "Prefer concise Chinese unless the user asks for another language.",
+    "When useful, include what should be saved into Obsidian.",
+    "Do not use emoji as structural markers; use plain Markdown and terminal-safe text."
+  ],
+  "templates": {
+    "default": {
+      "mode": "chat",
+      "title": "goldfish response",
+      "sections": [
+        {"key": "direct_answer", "heading": "结论", "required": true},
+        {"key": "context", "heading": "关键依据", "required": false},
+        {"key": "judgment", "heading": "我的判断", "required": false},
+        {"key": "next_actions", "heading": "下一步", "required": true}
+      ]
+    },
+    "research": {
+      "mode": "research",
+      "title": "goldfish research",
+      "sections": [
+        {"key": "direct_answer", "heading": "结论", "required": true},
+        {"key": "evidence", "heading": "关键依据", "required": true},
+        {"key": "interpretation", "heading": "判断", "required": true},
+        {"key": "uncertainty", "heading": "不确定性", "required": true},
+        {"key": "value_for_user", "heading": "对你的价值", "required": true},
+        {"key": "next_actions", "heading": "下一步", "required": true},
+        {"key": "suggested_locations", "heading": "建议沉淀位置", "required": false}
+      ]
+    },
+    "business_idea": {
+      "mode": "business",
+      "title": "goldfish business draft",
+      "sections": [
+        {"key": "target_user", "heading": "目标用户", "required": true},
+        {"key": "pain_point", "heading": "痛点", "required": true},
+        {"key": "product_shape", "heading": "产品形态", "required": true},
+        {"key": "mvp", "heading": "MVP", "required": true},
+        {"key": "pricing", "heading": "收费方式", "required": true},
+        {"key": "validation", "heading": "验证方法", "required": true},
+        {"key": "risks", "heading": "风险", "required": true},
+        {"key": "suggested_locations", "heading": "建议沉淀位置", "required": false}
+      ]
+    },
+    "prompt": {
+      "mode": "prompt",
+      "title": "goldfish prompt draft",
+      "sections": [
+        {"key": "use_case", "heading": "用途", "required": true},
+        {"key": "scenario", "heading": "适用场景", "required": true},
+        {"key": "prompt", "heading": "Prompt", "required": true},
+        {"key": "variables", "heading": "变量说明", "required": false},
+        {"key": "usage_notes", "heading": "使用建议", "required": true}
+      ]
+    },
+    "agent": {
+      "mode": "plan_execute",
+      "title": "goldfish agent result",
+      "sections": [
+        {"key": "direct_answer", "heading": "结论", "required": true},
+        {"key": "execution", "heading": "执行记录", "required": true},
+        {"key": "observations", "heading": "关键观察", "required": true},
+        {"key": "files_written", "heading": "产物", "required": false},
+        {"key": "next_actions", "heading": "下一步", "required": true}
+      ]
+    }
+  }
+}

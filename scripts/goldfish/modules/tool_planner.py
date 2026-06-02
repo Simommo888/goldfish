@@ -13,11 +13,17 @@ MIN_CONFIDENCE = 0.45
 PLANNER_ALLOWED_TOOLS = {
     "web_search",
     "search",
+    "rag_query",
+    "rag_search",
+    "rag_status",
     "agent",
     "doctor",
     "tools",
     "skills",
     "memory_show",
+    "memory_remember",
+    "memory_forget",
+    "memory_review",
     "history",
     "source_health",
     "feedback_list",
@@ -30,7 +36,11 @@ PLANNER_ALLOWED_TOOLS = {
 ARG_ALLOWLIST = {
     "web_search": {"query", "mode", "limit", "fetch_limit", "timeout", "search_provider", "provider", "no_llm", "no_save", "timespan", "fetch_pages"},
     "search": {"query", "limit"},
-    "agent": {"goal", "max_steps", "no_llm", "no_save"},
+    "rag_query": {"question", "query", "top_k", "limit", "retrieval_mode", "category", "use_llm"},
+    "rag_search": {"query", "question", "top_k", "limit", "retrieval_mode", "category"},
+    "agent": {"goal", "max_steps", "no_llm", "no_save", "step_timeout", "task_timeout", "max_failures", "max_consecutive_failures"},
+    "memory_remember": {"text", "kind", "tags"},
+    "memory_forget": {"query"},
     "dry_run": {"no_llm", "emit_report", "write_drafts", "date", "limit"},
     "run_daily": {"no_llm", "emit_report", "write_drafts", "date", "limit", "dry_run"},
     "weekly": {"no_llm", "emit_report", "date"},
@@ -39,7 +49,7 @@ ARG_ALLOWLIST = {
     "history": {"limit"},
     "external_cli": {"action", "name", "args"},
 }
-NO_ARG_TOOLS = {"doctor", "tools", "memory_show", "feedback_list", "config_check"}
+NO_ARG_TOOLS = {"doctor", "tools", "memory_show", "memory_review", "feedback_list", "config_check", "rag_status"}
 
 
 class PlannerProvider(Protocol):
@@ -134,7 +144,12 @@ def _planner_messages(message: str, tools: List[Dict[str, Any]]) -> List[Dict[st
         "You are goldfish's tool router. Choose exactly one existing tool for the user request. "
         "Return strict JSON only with keys: tool, args, confidence, reason. "
         "Do not answer the user. Do not invent tools. Use web_search for current/latest/public web information. "
-        "Use search only for local notes/history. Use agent for multi-step research, drafting, business ideas, or knowledge deposition. "
+        "Use rag_query for questions about the configured local RAG/Obsidian knowledge base, saved notes, or prior deposited knowledge. "
+        "Use rag_search when the user explicitly asks to search source chunks in the RAG knowledge base. "
+        "Use search only for goldfish local history/chat/generated reports when RAG is not requested. "
+        "Use agent for multi-step research, drafting, business ideas, or knowledge deposition. "
+        "Use memory_remember only when the user explicitly asks you to remember/save a durable preference or fact. "
+        "Use memory_forget when the user asks to forget/delete a memory. Use memory_review for memory audits. "
         "Use dry_run for daily report requests unless the user explicitly asks to write/save/run for real. "
         "Use external_cli only with action=list unless the user explicitly asks for an allow-listed CLI tool."
     )
@@ -163,9 +178,40 @@ def _sanitize_args(tool_name: str, raw_args: Dict[str, Any], message: str, defau
         args["query"] = str(args.get("query") or message).strip()
         if "limit" in args:
             args["limit"] = _int(args["limit"], 8, min_value=1, max_value=50)
+    elif tool_name == "rag_query":
+        question = str(args.get("question") or args.get("query") or message).strip()
+        args = {key: value for key, value in args.items() if key in ARG_ALLOWLIST["rag_query"]}
+        args["question"] = question
+        if "top_k" in args:
+            args["top_k"] = _int(args["top_k"], 8, min_value=1, max_value=20)
+        if "limit" in args and "top_k" not in args:
+            args["top_k"] = _int(args.pop("limit"), 8, min_value=1, max_value=20)
+    elif tool_name == "rag_search":
+        query = str(args.get("query") or args.get("question") or message).strip()
+        args = {key: value for key, value in args.items() if key in ARG_ALLOWLIST["rag_search"]}
+        args["query"] = query
+        if "top_k" in args:
+            args["top_k"] = _int(args["top_k"], 8, min_value=1, max_value=30)
+        if "limit" in args and "top_k" not in args:
+            args["top_k"] = _int(args.pop("limit"), 8, min_value=1, max_value=30)
+    elif tool_name == "memory_remember":
+        args["text"] = str(args.get("text") or message).strip()
+        args.setdefault("kind", "fact")
+        if isinstance(args.get("tags"), str):
+            args["tags"] = [tag.strip() for tag in args["tags"].split(",") if tag.strip()]
+    elif tool_name == "memory_forget":
+        args["query"] = str(args.get("query") or message).strip()
     elif tool_name == "agent":
         args["goal"] = str(args.get("goal") or message).strip()
         args["max_steps"] = _int(args.get("max_steps", 5), 5, min_value=1, max_value=8)
+        if "step_timeout" in args:
+            args["step_timeout"] = _float_range(args["step_timeout"], 45.0, min_value=1.0, max_value=600.0)
+        if "task_timeout" in args:
+            args["task_timeout"] = _float_range(args["task_timeout"], 240.0, min_value=5.0, max_value=7200.0)
+        if "max_failures" in args:
+            args["max_failures"] = _int(args["max_failures"], 4, min_value=1, max_value=20)
+        if "max_consecutive_failures" in args:
+            args["max_consecutive_failures"] = _int(args["max_consecutive_failures"], 2, min_value=1, max_value=10)
         args.setdefault("no_save", False)
     elif tool_name == "external_cli":
         if str(args.get("action") or "list").lower() != "list":
@@ -184,11 +230,17 @@ def _response_hint(tool_name: str) -> str:
     return {
         "web_search": "Web search results:",
         "search": "Local search results:",
+        "rag_query": "RAG answer:",
+        "rag_search": "RAG search results:",
+        "rag_status": "RAG status:",
         "agent": "Agent loop completed:",
         "doctor": "Doctor report:",
         "tools": "Available tools:",
         "skills": "Skills:",
         "memory_show": "Agent memory:",
+        "memory_remember": "Memory saved:",
+        "memory_forget": "Memory updated:",
+        "memory_review": "Memory review:",
         "history": "Recent runs:",
         "source_health": "Source health:",
         "feedback_list": "Feedback records:",
@@ -245,6 +297,14 @@ def _float(value: Any, default: float) -> float:
 def _int(value: Any, default: int, *, min_value: int, max_value: int) -> int:
     try:
         number = int(value)
+    except Exception:
+        number = default
+    return max(min_value, min(max_value, number))
+
+
+def _float_range(value: Any, default: float, *, min_value: float, max_value: float) -> float:
+    try:
+        number = float(value)
     except Exception:
         number = default
     return max(min_value, min(max_value, number))

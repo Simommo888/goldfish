@@ -150,8 +150,8 @@ def set_user_environment_variable(name: str, value: str) -> None:
 
 def redact_secret_text(text: str) -> str:
     patterns = [
-        r"sk-[A-Za-z0-9_\-]{12,}",
-        r"sk_[A-Za-z0-9_\-]{12,}",
+        r"(?<![A-Za-z0-9_])sk-[A-Za-z0-9_\-]{12,}",
+        r"(?<![A-Za-z0-9_])sk_[A-Za-z0-9_\-]{12,}",
         r"(?i)(api[_-]?key\s*[:=]\s*)[A-Za-z0-9_\-]{12,}",
     ]
     redacted = text

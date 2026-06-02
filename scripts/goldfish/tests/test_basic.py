@@ -1,7 +1,11 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -11,16 +15,19 @@ ROOT = AGENT_DIR.parents[1]
 sys.path.insert(0, str(AGENT_DIR))
 
 from modules.classifier import classify_item
-from modules.agent_memory import load_memory
+from modules.agent_memory import forget_memory, load_memory, memory_context, remember_memory, review_memory
 from modules.agent_loop import make_plan, run_agent_loop
 from modules.command_router import CommandRouter
+from modules.conversation_agent import ChatSession
 from modules.config_loader import load_config
 from modules.external_cli import list_external_tools, run_external_tool
 from modules.insight_extractor import extract_insights
 from modules.intent_router import route_intent
 from modules.model_setup import configure_environment, find_profile, redact_secret_text
 from modules.providers.registry import resolve_llm_connection
+from modules.rag_client import RagConfig, rag_query, rag_search, rag_status
 from modules.report_generator import generate_daily_report
+from modules.response_formatter import infer_response_kind, render_markdown, response_system_prompt
 from modules.search_engine import search_goldfish
 from modules.scorer import score_item
 from modules.setup_agent import SetupSession, configure_search_environment, find_search_provider
@@ -28,6 +35,7 @@ from modules.skill_router import select_skills
 from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
+from modules.token_meter import context_energy_bar, estimate_tokens
 from modules.tool_planner import plan_tool, validate_tool_plan
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
 from modules.web_researcher import _gdelt_results_from_payload, _hackernews_results_from_payload, _jina_results_from_text, _search_provider_order, _tavily_results_from_payload
@@ -52,6 +60,31 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         for path in (AGENT_DIR / "config").glob("*.json"):
             with self.subTest(path=path.name):
                 json.loads(path.read_text(encoding="utf-8"))
+
+    def test_response_formats_are_loaded_and_render_markdown(self):
+        config = load_config(AGENT_DIR / "config")
+        self.assertIn("research", config.response_formats.get("templates", {}))
+        self.assertEqual(infer_response_kind("research MCP monetization opportunity"), "business_idea")
+        prompt = response_system_prompt("research", "Simplified Chinese")
+        self.assertIn("goldfish", prompt)
+        self.assertIn("关键依据", prompt)
+        rendered = render_markdown(
+            "default",
+            {
+                "direct_answer": "可以这样做。",
+                "context": ["先固定模板。"],
+                "judgment": "格式应由程序约束。",
+                "next_actions": ["接入聊天链路。"],
+            },
+        )
+        self.assertIn("goldfish", rendered)
+        self.assertIn("▌ 结论", rendered)
+        self.assertIn("▌ 下一步", rendered)
+
+    def test_token_meter_context_energy_bar(self):
+        self.assertIn("100%", context_energy_bar(100, 100))
+        self.assertIn("  0%", context_energy_bar(0, 100))
+        self.assertGreater(estimate_tokens("goldfish ??"), 0)
 
     def test_scorer_scores_example(self):
         config = load_config(AGENT_DIR / "config")
@@ -143,12 +176,44 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(configured["provider"], "deepseek")
         self.assertEqual(configured["model"], "deepseek-v4-pro")
         self.assertIn("***REDACTED***", redact_secret_text("api_key=sk-test-do-not-use-123456"))
+        self.assertIn("task-20260602-abcdef", redact_secret_text("task-20260602-abcdef"))
+
+    def test_memory_v2_remember_review_and_forget(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            remembered = remember_memory(
+                "I care about MCP commercial opportunities in goldfish",
+                kind="business",
+                root=root,
+            )
+            self.assertEqual(remembered["status"], "ok")
+            memory = load_memory(root)
+            self.assertEqual(memory["schema_version"], 2)
+            self.assertTrue(memory["long_term_facts"])
+            context = memory_context(memory)
+            self.assertIn("MCP commercial opportunities", context)
+            review = review_memory(root)
+            self.assertEqual(review["counts"]["long_term_facts"], 1)
+            removed = forget_memory("MCP commercial", root=root)
+            self.assertGreaterEqual(removed["removed_count"], 1)
+            self.assertFalse(load_memory(root)["long_term_facts"])
 
     def test_command_router_routes_search(self):
         routed = CommandRouter().route('/search MCP --limit 3', {"no_llm": True})
         self.assertEqual(routed.tool_name, "search")
         self.assertIn("MCP", routed.args["query"])
         self.assertEqual(routed.args["limit"], 3)
+
+    def test_command_router_routes_memory_commands(self):
+        remember = CommandRouter().route('/remember I prefer Agent commercialization --kind preference', {"no_llm": True})
+        self.assertEqual(remember.tool_name, "memory_remember")
+        self.assertIn("Agent commercialization", remember.args["text"])
+        self.assertEqual(remember.args["kind"], "preference")
+        forget = CommandRouter().route('/forget Agent commercialization', {"no_llm": True})
+        self.assertEqual(forget.tool_name, "memory_forget")
+        self.assertIn("Agent commercialization", forget.args["query"])
+        review = CommandRouter().route('/memory review', {"no_llm": True})
+        self.assertEqual(review.tool_name, "memory_review")
 
     def test_command_router_routes_research(self):
         routed = CommandRouter().route('/research MCP servers --limit 3 --no-llm', {"no_llm": True})
@@ -163,6 +228,23 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(routed.tool_name, "web_search")
         self.assertIn("MCP servers", routed.args["query"])
         self.assertEqual(routed.args["limit"], 3)
+
+    def test_command_router_routes_rag_commands(self):
+        answer = CommandRouter().route('/rag goldfish project --top-k 3', {"no_llm": True})
+        self.assertEqual(answer.tool_name, "rag_query")
+        self.assertIn("goldfish", answer.args["question"])
+        self.assertEqual(answer.args["top_k"], 3)
+        search = CommandRouter().route('/rag-search MCP --top-k 2', {"no_llm": True})
+        self.assertEqual(search.tool_name, "rag_search")
+        self.assertEqual(search.args["query"], "MCP")
+        self.assertEqual(search.args["top_k"], 2)
+        status = CommandRouter().route('/rag-status', {"no_llm": True})
+        self.assertEqual(status.tool_name, "rag_status")
+
+    def test_command_router_routes_natural_language_to_rag(self):
+        routed = CommandRouter().route("please query my knowledge base about goldfish project", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "rag_query")
+        self.assertIn("goldfish", routed.args["query"])
 
     def test_command_router_routes_chinese_today_ai_news_to_web_search(self):
         routed = CommandRouter().route("请告诉我今天发生的AI大事", {"no_llm": True})
@@ -220,6 +302,24 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         low = validate_tool_plan({"tool": "search", "args": {"query": "MCP"}, "confidence": 0.1}, "MCP", tools)
         self.assertIsNone(low)
 
+    def test_tool_planner_validates_rag_tool_choice(self):
+        tools = [
+            {"name": "rag_query", "description": "Ask local RAG", "mutating": False},
+            {"name": "rag_status", "description": "Check RAG", "mutating": False},
+        ]
+        plan = validate_tool_plan(
+            {"tool": "rag_query", "args": {"question": "goldfish project", "top_k": 3, "api_key": "nope"}, "confidence": 0.9},
+            "query my knowledge base about goldfish project",
+            tools,
+        )
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.tool_name, "rag_query")
+        self.assertEqual(plan.args["top_k"], 3)
+        self.assertNotIn("api_key", plan.args)
+        status = validate_tool_plan({"tool": "rag_status", "args": {"query": "ignored"}, "confidence": 0.9}, "rag status", tools)
+        self.assertIsNotNone(status)
+        self.assertEqual(status.args, {})
+
     def test_command_router_routes_agent(self):
         routed = CommandRouter().route('/agent research MCP business opportunities --max-steps 3 --no-llm', {"no_llm": True})
         self.assertEqual(routed.tool_name, "agent")
@@ -247,6 +347,10 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(plan[0].status, "search")
         self.assertEqual(plan[0].args["mode"], "research")
         self.assertTrue(plan[0].args["no_save"])
+
+    def test_agent_loop_plans_rag_goal(self):
+        plan = make_plan("query my knowledge base about goldfish project", max_steps=3, no_save=True)
+        self.assertIn("rag_query", [step.tool for step in plan])
 
     def test_agent_loop_runs_with_fake_registry_and_workspace(self):
         class FakeRegistry:
@@ -319,6 +423,90 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(result["observations"][1]["tool"], "web_search")
         self.assertEqual(result["observations"][2]["tool"], "search")
         self.assertIn("web_search_failed_add_local_search", result["plan_revisions"][1]["reason"])
+
+    def test_agent_loop_records_step_timeout(self):
+        class SlowRegistry:
+            def execute(self, name, args=None):
+                time.sleep(0.2)
+                return {"status": "ok"}
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = run_agent_loop(
+                "show tools",
+                registry=SlowRegistry(),
+                max_steps=1,
+                no_llm=True,
+                no_save=True,
+                root=Path(temp),
+                step_timeout=0.05,
+                task_timeout=2,
+            )
+        self.assertEqual(result["observations"][0]["failure_type"], "timeout")
+        self.assertTrue(result["observations"][0]["timed_out"])
+        self.assertEqual(result["failure_summary"]["timeouts"], 1)
+        self.assertIn("failure_policy", result["execution"])
+
+    def test_agent_loop_stops_after_consecutive_failures(self):
+        class FailingRegistry:
+            def execute(self, name, args=None):
+                return {"status": "error", "error": f"{name} failed"}
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = run_agent_loop(
+                "show tools",
+                registry=FailingRegistry(),
+                max_steps=3,
+                no_llm=True,
+                no_save=True,
+                root=Path(temp),
+                max_consecutive_failures=1,
+            )
+        self.assertEqual(result["execution"]["stop_reason"], "max_consecutive_failures_reached")
+        self.assertEqual(result["failure_summary"]["consecutive_failures"], 1)
+
+    def test_rag_client_shapes_with_fake_transport(self):
+        config = RagConfig(
+            enabled=True,
+            base_url="http://127.0.0.1:8020",
+            health_endpoint="/api/health",
+            stats_endpoint="/api/rag/stats",
+            ask_endpoint="/api/rag/ask",
+            search_endpoint="/api/rag/search",
+            retrieval_mode="hybrid",
+            top_k=8,
+            use_llm=False,
+            timeout_seconds=5,
+            config_path=AGENT_DIR / "config" / "rag.json",
+        )
+
+        def fake_transport(method, url, payload, timeout):
+            if url.endswith("/api/health"):
+                return {"status": "ok", "service": "RAG Knowledge Base"}
+            if url.endswith("/api/rag/stats"):
+                return {"documents": 2, "chunks": 3, "embeddings": 3, "kb_root": "D:/My-Knowledge-Base"}
+            if url.endswith("/api/rag/ask"):
+                self.assertEqual(payload["question"], "goldfish project")
+                return {
+                    "question": payload["question"],
+                    "answer": "goldfish is an intelligence and knowledge deposition agent.",
+                    "sources": [{"title": "Goldfish", "file_path": "README.md", "content": "Agent", "score": 1.0}],
+                    "llm_used": False,
+                    "model": "",
+                    "warnings": [],
+                }
+            if url.endswith("/api/rag/search"):
+                self.assertEqual(payload["query"], "MCP")
+                return [{"title": "MCP", "file_path": "note.md", "content": "MCP note", "score": 0.8}]
+            raise AssertionError(url)
+
+        status = rag_status(transport=fake_transport, config=config)
+        self.assertEqual(status["status"], "ok")
+        answer = rag_query("goldfish project", top_k=3, transport=fake_transport, config=config)
+        self.assertEqual(answer["status"], "ok")
+        self.assertEqual(answer["sources"][0]["file_path"], "README.md")
+        search = rag_search("MCP", transport=fake_transport, config=config)
+        self.assertEqual(search["status"], "ok")
+        self.assertEqual(search["results"][0]["title"], "MCP")
 
     def test_skill_router_selects_business_and_draft_skills(self):
         business = select_skills("帮我从 MCP 新闻里提炼 3 个商业想法和 MVP")
@@ -590,6 +778,18 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertIn("v0.1.0", result.stdout)
         self.assertIn("session closed", result.stdout)
 
+    def test_interactive_chat_prints_thinking_state(self):
+        session = ChatSession(use_llm=False, interactive=True)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            answer = session.respond("/tools")
+        text = output.getvalue()
+        self.assertIn("thinking", text)
+        self.assertIn("reading", text)
+        self.assertIn("done", text)
+        self.assertIn("ctx", text)
+        self.assertIn("tools", answer)
+
     def test_cli_tools_and_history(self):
         tools_command = [sys.executable, str(AGENT_DIR / "cli.py"), "tools"]
         tools = subprocess.run(tools_command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
@@ -618,12 +818,29 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertIn("source_health", source_health.stdout)
 
     def test_cli_agent_command_runs_without_llm(self):
-        command = [sys.executable, str(AGENT_DIR / "cli.py"), "agent", "show tools", "--no-llm", "--max-steps", "1", "--no-save"]
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "agent",
+            "show tools",
+            "--no-llm",
+            "--max-steps",
+            "1",
+            "--no-save",
+            "--step-timeout",
+            "5",
+            "--task-timeout",
+            "30",
+            "--max-failures",
+            "2",
+            "--max-consecutive-failures",
+            "1",
+        ]
         result = subprocess.run(command, cwd=str(ROOT), text=True, capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        self.assertIn('"agent"', result.stdout)
-        self.assertIn('"task_id"', result.stdout)
-        self.assertIn('"plan_execute"', result.stdout)
+        self.assertIn("Agent loop completed:", result.stdout)
+        self.assertIn("goldfish · plan_execute", result.stdout)
+        self.assertIn("task_id", result.stdout)
 
     def test_search_engine_returns_shape(self):
         result = search_goldfish("MCP", limit=3, root=ROOT)
