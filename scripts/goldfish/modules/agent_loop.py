@@ -30,6 +30,7 @@ from .utils import kb_root, now, safe_filename
 
 ALLOWED_TOOLS = {
     "web_search",
+    "knowledge_lookup",
     "search",
     "rag_query",
     "rag_search",
@@ -263,7 +264,21 @@ def make_plan(
         steps.append(PlannedStep(len(steps) + 1, "reading", "memory_show", {}, "Goal asks to inspect memory."))
     if _wants_rag_status(lowered):
         steps.append(PlannedStep(len(steps) + 1, "reading", "rag_status", {}, "Goal asks to inspect local RAG service health."))
-    if _wants_rag_query(lowered):
+
+    knowledge_lookup_added = False
+    if _wants_knowledge_lookup(lowered):
+        steps.append(
+            PlannedStep(
+                len(steps) + 1,
+                "search",
+                "knowledge_lookup",
+                {"query": _strip_knowledge_lookup_words(goal), "top_k": 8, "web_limit": 5},
+                "Goal asks for a local-first lookup; query RAG first, then public web in separate blocks.",
+            )
+        )
+        knowledge_lookup_added = True
+
+    if not knowledge_lookup_added and _wants_rag_query(lowered):
         steps.append(
             PlannedStep(
                 len(steps) + 1,
@@ -273,7 +288,7 @@ def make_plan(
                 "Goal asks for local RAG/Obsidian knowledge-base context.",
             )
         )
-    if _wants_local_search(lowered):
+    if not knowledge_lookup_added and _wants_local_search(lowered):
         steps.append(
             PlannedStep(
                 len(steps) + 1,
@@ -283,7 +298,7 @@ def make_plan(
                 "Goal asks for local/history/notes search.",
             )
         )
-    if _wants_web_search(lowered):
+    if not knowledge_lookup_added and _wants_web_search(lowered):
         steps.append(
             PlannedStep(
                 len(steps) + 1,
@@ -297,7 +312,7 @@ def make_plan(
                 "Goal asks for public web search results without a full research report.",
             )
         )
-    if _wants_research(lowered) or _skills_include(selected_skills, {"web-research", "internet-search", "business-idea", "trend-analysis"}):
+    if not knowledge_lookup_added and (_wants_research(lowered) or _skills_include(selected_skills, {"web-research", "internet-search", "business-idea", "trend-analysis"})):
         if any(step.tool == "web_search" for step in steps) and not _skills_include(selected_skills, {"web-research", "business-idea", "trend-analysis"}):
             pass
         else:
@@ -318,7 +333,7 @@ def make_plan(
                     "Goal asks for public web research or market/trend/opportunity study.",
                 )
             )
-    if _wants_local_search(lowered) or _skills_include(selected_skills, {"retrieval-planning", "knowledge-routing", "draft-writing"}):
+    if not knowledge_lookup_added and (_wants_local_search(lowered) or _skills_include(selected_skills, {"retrieval-planning", "knowledge-routing", "draft-writing"})):
         if not any(step.tool == "search" for step in steps):
             steps.append(
                 PlannedStep(
@@ -407,6 +422,17 @@ def _revise_plan(
     last = observations[-1]
     used_tools = {str(obs.get("tool")) for obs in observations}
     planned_tools = {step.tool for step in plan}
+
+    if last.get("tool") == "knowledge_lookup" and not last.get("success") and "search" not in used_tools | planned_tools:
+        new_plan = _insert_next_step(
+            plan,
+            observations,
+            status="search",
+            tool="search",
+            args={"query": _strip_knowledge_lookup_words(goal), "limit": 8},
+            reason="Combined RAG/web lookup failed; fall back to local goldfish history search.",
+        )
+        return {"reason": "knowledge_lookup_failed_add_local_search", "plan": new_plan}
 
     if last.get("tool") == "web_search" and not last.get("success") and "search" not in used_tools | planned_tools:
         new_plan = _insert_next_step(
@@ -738,6 +764,80 @@ def _wants_web_search(text: str) -> bool:
             "查网页",
         ]
     )
+
+
+def _wants_knowledge_lookup(text: str) -> bool:
+    if _wants_rag_query(text) or _wants_rag_status(text):
+        return False
+    if _wants_web_search(text):
+        return False
+    if any(
+        marker in text
+        for marker in [
+            "latest",
+            "today",
+            "breaking",
+            "news",
+            "real-time",
+            "realtime",
+            "最新",
+            "实时",
+            "今天",
+            "今日",
+            "新闻",
+            "消息",
+            "大事",
+            "动态",
+        ]
+    ):
+        return False
+    return any(
+        marker in text
+        for marker in [
+            "look up",
+            "lookup",
+            "find out",
+            "query",
+            "查一下",
+            "查找",
+            "查询",
+            "检索",
+            "搜一下",
+            "搜索一下",
+            "找一下",
+            "相关内容",
+            "相关资料",
+            "相关笔记",
+        ]
+    )
+
+
+def _strip_knowledge_lookup_words(goal: str) -> str:
+    cleaned = re.sub(
+        r"\b(look up|lookup|find out|query|please|help me|can you|could you)\b",
+        " ",
+        goal,
+        flags=re.I,
+    )
+    for marker in [
+        "帮我",
+        "请帮我",
+        "麻烦",
+        "查一下",
+        "查找",
+        "查询",
+        "检索",
+        "搜一下",
+        "搜索一下",
+        "找一下",
+        "相关内容",
+        "相关资料",
+        "相关笔记",
+        "内容",
+    ]:
+        cleaned = cleaned.replace(marker, " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ：:，,。.!！?？")
+    return cleaned or goal.strip()
 
 
 def _wants_project_search(text: str) -> bool:

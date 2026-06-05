@@ -12,7 +12,8 @@ dependencies = [
   "feedparser",
   "openai",
   "rich",
-  "Pillow"
+  "Pillow",
+  "qrcode[pil]"
 ]
 
 [project.scripts]

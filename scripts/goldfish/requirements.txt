@@ -3,3 +3,4 @@ feedparser
 openai
 rich
 Pillow
+qrcode[pil]

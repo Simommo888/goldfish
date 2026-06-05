@@ -105,6 +105,13 @@ class CommandRouter:
             query_parts = _positional_parts(rest)
             parsed.setdefault("query", " ".join(query_parts).strip())
             return RoutedCommand("search", parsed, "Local search results:")
+        if command == "/lookup":
+            parsed = _parse_flags(rest)
+            query_parts = _positional_parts(rest)
+            parsed.setdefault("query", " ".join(query_parts).strip())
+            parsed.setdefault("top_k", 8)
+            parsed.setdefault("web_limit", 5)
+            return RoutedCommand("knowledge_lookup", parsed, "Knowledge lookup:")
         if command == "/rag":
             parsed = _parse_flags(rest)
             query_parts = _positional_parts(rest)
@@ -142,6 +149,13 @@ class CommandRouter:
         if command in {"/source-health", "/sources"}:
             parsed = _parse_flags(rest)
             return RoutedCommand("source_health", parsed, "Source health:")
+        if command == "/notify":
+            parsed = _parse_flags(rest)
+            positional = _positional_parts(rest)
+            action = positional[0].lower() if positional else "status"
+            if action == "test":
+                return RoutedCommand("notify_test", parsed, "Notification test:")
+            return RoutedCommand("notify_status", {}, "Notification status:")
         if command == "/tools":
             return RoutedCommand("tools", {}, "Available tools:")
         if command in {"/external", "/exec"}:
@@ -156,6 +170,9 @@ class CommandRouter:
         return RoutedCommand("", {}, f"Unknown command: {command}", unknown=True)
 
     def _route_natural(self, text: str, defaults: Dict[str, Any]) -> RoutedCommand:
+        knowledge_lookup = _route_implicit_knowledge_lookup(text, defaults)
+        if knowledge_lookup:
+            return knowledge_lookup
         plan = plan_tool(text, self.registry.list_tools(), defaults)
         if plan:
             return RoutedCommand(plan.tool_name, plan.args, plan.response_hint)
@@ -223,6 +240,56 @@ def _parse_key_values(parts: list[str]) -> Dict[str, Any]:
     return values
 
 
+def _route_implicit_knowledge_lookup(text: str, defaults: Dict[str, Any]) -> RoutedCommand | None:
+    """Route ordinary lookup requests to RAG-first, web-second retrieval.
+
+    Requests like "帮我查一下春天相关内容" should first search the user's local
+    RAG knowledge base, then supplement with public web results. Explicit
+    web/latest/news wording still routes elsewhere.
+    """
+
+    if not _looks_like_knowledge_lookup(text):
+        return None
+    query = _clean_knowledge_lookup_query(text)
+    args = dict(defaults)
+    args.update({"query": query, "top_k": 8, "web_limit": 5})
+    return RoutedCommand("knowledge_lookup", args, "Knowledge lookup:")
+
+
+def _looks_like_knowledge_lookup(text: str) -> bool:
+    lowered = text.lower()
+    if any(marker in lowered for marker in ["web search", "internet search", "online search", "search web", "search the web"]):
+        return False
+    if any(marker in text for marker in ["联网", "全网", "网页", "网上", "互联网"]):
+        return False
+    if any(marker in lowered for marker in ["latest", "today", "breaking", "news", "最新", "实时", "今天", "今日", "新闻", "消息", "大事", "动态"]):
+        return False
+    lookup_markers = ["查一下", "查找", "查询", "检索", "搜一下", "搜索一下", "找一下", "相关内容", "相关资料", "相关笔记"]
+    return any(marker in text for marker in lookup_markers)
+
+
+def _clean_knowledge_lookup_query(text: str) -> str:
+    query = text.strip()
+    for marker in [
+        "帮我",
+        "请帮我",
+        "麻烦",
+        "查一下",
+        "查找",
+        "查询",
+        "检索",
+        "搜一下",
+        "搜索一下",
+        "找一下",
+        "相关内容",
+        "相关资料",
+        "相关笔记",
+        "内容",
+    ]:
+        query = query.replace(marker, "")
+    return query.strip(" ，,。.!！?？") or text.strip()
+
+
 HELP_TEXT = """goldfish commands:
 
 /run                Generate the daily AI intelligence report
@@ -237,6 +304,7 @@ HELP_TEXT = """goldfish commands:
 /feedback           Show feedback records
 /history            Show recent runs
 /search <query>     Search local goldfish history and generated notes
+/lookup <query>     Query RAG first, then public web, and keep results separate
 /rag <question>     Ask the configured local RAG knowledge base
 /rag-search <query> Search source chunks in the configured local RAG service
 /rag-status         Check local RAG service health and stats
@@ -245,6 +313,8 @@ HELP_TEXT = """goldfish commands:
 /agent <goal>       Plan and run a bounded goal-driven agent loop
 /skills [name]      List or open lightweight skills
 /source-health      Show source health
+/notify status      Show notification and Feishu webhook status
+/notify test        Send a Feishu test notification
 /tools              List available local tools
 /external           List allow-listed external CLI tools
 /exec <tool> k=v    Run an allow-listed external CLI tool

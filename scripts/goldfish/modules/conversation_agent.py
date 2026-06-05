@@ -119,7 +119,7 @@ class ChatSession:
     def _print_state(self, status_name: str, detail: str = "", input_tokens: int = 0) -> None:
         self.current_state = status_name
         if self.interactive:
-            print(self._state_line(status_name, detail, input_tokens), flush=True)
+            print(cli_theme.agent_event(_stream_state_message(status_name, detail)), flush=True)
 
     def _done_line(self, stats_status: str, input_tokens: int, output_tokens: int, provider_usage: Dict[str, Any] | None = None) -> str:
         stats = build_turn_stats(
@@ -250,7 +250,8 @@ class ChatSession:
         if not self.interactive:
             return
         output_tokens = estimate_tokens(answer)
-        print(self._done_line(status_name, input_tokens, output_tokens, provider_usage), flush=True)
+        self._done_line(status_name, input_tokens, output_tokens, provider_usage)
+        print(cli_theme.agent_event("answer ready."), flush=True)
 
     def _handle_session_command(self, message: str) -> str:
         lower = message.lower()
@@ -433,7 +434,7 @@ def _relative_time(value: str) -> str:
 
 
 def _state_for_tool(tool_name: str) -> str:
-    if tool_name in {"web_search", "search", "rag_query", "rag_search"}:
+    if tool_name in {"web_search", "knowledge_lookup", "search", "rag_query", "rag_search"}:
         return "search"
     if tool_name in {
         "tools",
@@ -449,6 +450,33 @@ def _state_for_tool(tool_name: str) -> str:
     }:
         return "reading"
     return "run"
+
+
+def _stream_state_message(status_name: str, detail: str = "") -> str:
+    detail_lower = (detail or "").lower()
+    if status_name == "thinking":
+        if "model" in detail_lower:
+            return "generating answer..."
+        return "analyzing query..."
+    if status_name == "search":
+        if "knowledge_lookup" in detail_lower:
+            return "searching knowledge base and web..."
+        if "rag" in detail_lower:
+            return "searching knowledge base..."
+        if "web" in detail_lower:
+            return "searching web..."
+        if "search" in detail_lower:
+            return "searching local history..."
+        return "retrieving sources..."
+    if status_name == "reading":
+        if detail:
+            return f"reading {detail.replace('calling ', '')}..."
+        return "reading local state..."
+    if status_name == "run":
+        if detail:
+            return f"running {detail.replace('calling ', '')}..."
+        return "running task..."
+    return f"{status_name}..."
 
 
 def _compact_token_count(value: int) -> str:

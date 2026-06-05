@@ -21,13 +21,15 @@ from modules.command_router import CommandRouter
 from modules.conversation_agent import ChatSession
 from modules.config_loader import load_config
 from modules.external_cli import list_external_tools, run_external_tool
+from modules.feishu_qr_setup import build_pairing_urls, is_valid_feishu_app_credentials, is_valid_feishu_webhook, render_terminal_qr
 from modules.insight_extractor import extract_insights
 from modules.intent_router import route_intent
 from modules.model_setup import configure_environment, find_profile, redact_secret_text
+from modules.notifier import feishu_status, send_feishu_test
 from modules.providers.registry import resolve_llm_connection
 from modules.rag_client import RagConfig, rag_query, rag_search, rag_status
 from modules.report_generator import generate_daily_report
-from modules.response_formatter import infer_response_kind, render_markdown, response_system_prompt
+from modules.response_formatter import format_tool_response, infer_response_kind, render_markdown, response_system_prompt
 from modules.search_engine import search_goldfish
 from modules.scorer import score_item
 from modules.setup_agent import SetupSession, configure_search_environment, find_search_provider
@@ -36,6 +38,7 @@ from modules.skill_loader import list_skills, load_skill
 from modules.source_health import build_source_health_records
 from modules.state_store import GoldfishState
 from modules.token_meter import context_energy_bar, estimate_tokens
+import modules.tool_registry as tool_registry_module
 from modules.tool_planner import plan_tool, validate_tool_plan
 from modules.web_researcher import generate_research_markdown, rule_based_synthesis
 from modules.web_researcher import _gdelt_results_from_payload, _hackernews_results_from_payload, _jina_results_from_text, _search_provider_order, _tavily_results_from_payload
@@ -246,6 +249,18 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertEqual(routed.tool_name, "rag_query")
         self.assertIn("goldfish", routed.args["query"])
 
+    def test_command_router_routes_generic_chinese_lookup_to_knowledge_lookup(self):
+        routed = CommandRouter().route("\u5e2e\u6211\u67e5\u4e00\u4e0b\u6625\u5929\u76f8\u5173\u5185\u5bb9", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "knowledge_lookup")
+        self.assertEqual(routed.args["query"], "\u6625\u5929")
+        self.assertEqual(routed.args["top_k"], 8)
+        self.assertEqual(routed.args["web_limit"], 5)
+
+    def test_command_router_explicit_latest_still_routes_to_web(self):
+        routed = CommandRouter().route("\u5e2e\u6211\u67e5\u4e00\u4e0b\u4eca\u5929AI\u65b0\u95fb", {"no_llm": True})
+        self.assertEqual(routed.tool_name, "web_search")
+        self.assertEqual(routed.args["search_provider"], "news")
+
     def test_command_router_routes_chinese_today_ai_news_to_web_search(self):
         routed = CommandRouter().route("请告诉我今天发生的AI大事", {"no_llm": True})
         self.assertEqual(routed.tool_name, "web_search")
@@ -284,6 +299,22 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         )
         self.assertIsNotNone(chinese_plan)
         self.assertEqual(chinese_plan.args["search_provider"], "news")
+
+    def test_tool_planner_normalizes_generic_lookup_to_knowledge_lookup(self):
+        tools = [
+            {"name": "web_search", "description": "Search public web", "mutating": True},
+            {"name": "knowledge_lookup", "description": "Search RAG first then web", "mutating": False},
+        ]
+        plan = validate_tool_plan(
+            {"tool": "web_search", "args": {"query": "\u6625\u5929"}, "confidence": 0.9},
+            "\u5e2e\u6211\u67e5\u4e00\u4e0b\u6625\u5929\u76f8\u5173\u5185\u5bb9",
+            tools,
+        )
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.tool_name, "knowledge_lookup")
+        self.assertEqual(plan.args["query"], "\u6625\u5929")
+        self.assertEqual(plan.args["top_k"], 8)
+        self.assertEqual(plan.args["web_limit"], 5)
 
     def test_tool_planner_uses_provider_and_low_confidence_fallback(self):
         class FakeProvider:
@@ -351,6 +382,14 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
     def test_agent_loop_plans_rag_goal(self):
         plan = make_plan("query my knowledge base about goldfish project", max_steps=3, no_save=True)
         self.assertIn("rag_query", [step.tool for step in plan])
+
+    def test_agent_loop_plans_generic_lookup_as_knowledge_lookup(self):
+        plan = make_plan("\u5e2e\u6211\u67e5\u4e00\u4e0b\u6625\u5929\u76f8\u5173\u5185\u5bb9", max_steps=3, no_save=True)
+        tools = [step.tool for step in plan]
+        self.assertIn("knowledge_lookup", tools)
+        self.assertNotIn("web_search", tools)
+        lookup_step = next(step for step in plan if step.tool == "knowledge_lookup")
+        self.assertEqual(lookup_step.args["query"], "\u6625\u5929")
 
     def test_agent_loop_runs_with_fake_registry_and_workspace(self):
         class FakeRegistry:
@@ -507,6 +546,143 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         search = rag_search("MCP", transport=fake_transport, config=config)
         self.assertEqual(search["status"], "ok")
         self.assertEqual(search["results"][0]["title"], "MCP")
+        self.assertEqual(search["result_count"], 1)
+
+    def test_rag_client_basic_error_handling(self):
+        disabled = RagConfig(
+            enabled=False,
+            base_url="http://127.0.0.1:8020",
+            health_endpoint="/api/health",
+            stats_endpoint="/api/rag/stats",
+            ask_endpoint="/api/rag/ask",
+            search_endpoint="/api/rag/search",
+            retrieval_mode="hybrid",
+            top_k=8,
+            use_llm=False,
+            timeout_seconds=5,
+            config_path=AGENT_DIR / "config" / "rag.json",
+        )
+        enabled = RagConfig(
+            enabled=True,
+            base_url="http://127.0.0.1:8020",
+            health_endpoint="/api/health",
+            stats_endpoint="/api/rag/stats",
+            ask_endpoint="/api/rag/ask",
+            search_endpoint="/api/rag/search",
+            retrieval_mode="hybrid",
+            top_k=8,
+            use_llm=False,
+            timeout_seconds=5,
+            config_path=AGENT_DIR / "config" / "rag.json",
+        )
+
+        empty_query = rag_query("", config=enabled)
+        self.assertEqual(empty_query["status"], "error")
+        self.assertEqual(empty_query["error_type"], "empty_query")
+        missing_kb = rag_search("MCP", config=disabled)
+        self.assertEqual(missing_kb["status"], "error")
+        self.assertEqual(missing_kb["error_type"], "rag_disabled")
+
+        def timeout_transport(method, url, payload, timeout):
+            raise TimeoutError("timed out")
+
+        timeout_result = rag_search("MCP", transport=timeout_transport, config=enabled)
+        self.assertEqual(timeout_result["status"], "error")
+        self.assertEqual(timeout_result["error_type"], "timeout")
+        self.assertEqual(timeout_result["result_count"], 0)
+
+        def failing_transport(method, url, payload, timeout):
+            raise RuntimeError("retrieval backend failed")
+
+        failure = rag_query("goldfish project", transport=failing_transport, config=enabled)
+        self.assertEqual(failure["status"], "error")
+        self.assertEqual(failure["error_type"], "retrieval_failed")
+        self.assertEqual(failure["source_count"], 0)
+
+    def test_knowledge_lookup_runs_rag_then_web_and_formats_two_blocks(self):
+        old_rag_search = tool_registry_module.rag_search
+        old_search_public_web = tool_registry_module.search_public_web
+
+        def fake_rag_search(query, top_k=None, retrieval_mode=None, category="all"):
+            return {
+                "status": "ok",
+                "query": query,
+                "result_count": 1,
+                "results": [
+                    {
+                        "title": "Spring note",
+                        "file_path": "notes/spring.md",
+                        "heading": "Season",
+                        "score": 0.91,
+                        "content": "A local knowledge-base chunk about spring.",
+                    }
+                ],
+            }
+
+        def fake_web_search(query, limit=5, timeout=12, provider=None, timespan=None):
+            return [
+                {
+                    "title": "Spring public source",
+                    "url": "https://example.com/spring",
+                    "snippet": "A public web result about spring.",
+                    "source": "Fake Search",
+                    "provider_order": ["fake"],
+                }
+            ]
+
+        try:
+            tool_registry_module.rag_search = fake_rag_search
+            tool_registry_module.search_public_web = fake_web_search
+            result = tool_registry_module._tool_knowledge_lookup({"query": "spring", "top_k": 2, "web_limit": 2})
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["strategy"], ["rag_search", "web_search"])
+            self.assertTrue(result["safety"]["rag_first"])
+            self.assertTrue(result["safety"]["separate_blocks"])
+            self.assertFalse(result["safety"]["merged_claims"])
+            self.assertEqual(result["rag"]["result_count"], 1)
+            self.assertEqual(result["web"]["count"], 1)
+            rendered = format_tool_response("knowledge_lookup", result, "Knowledge lookup:")
+            self.assertIn("RAG 查询结果", rendered)
+            self.assertIn("联网查询结果", rendered)
+            self.assertIn("一致性约束", rendered)
+        finally:
+            tool_registry_module.rag_search = old_rag_search
+            tool_registry_module.search_public_web = old_search_public_web
+
+    def test_agent_loop_can_call_rag_and_record_timeout(self):
+        class SlowRagRegistry:
+            def __init__(self):
+                self.tools = {
+                    "skills": type("Spec", (), {"timeout_seconds": 1})(),
+                    "rag_query": type("Spec", (), {"timeout_seconds": 1})(),
+                    "memory_show": type("Spec", (), {"timeout_seconds": 1})(),
+                }
+
+            def execute(self, name, args=None):
+                if name == "skills":
+                    return {"status": "ok", "skill": {"name": (args or {}).get("name", "")}}
+                if name == "rag_query":
+                    time.sleep(0.2)
+                    return {"status": "ok", "sources": []}
+                if name == "memory_show":
+                    return {"status": "ok", "memory": {}}
+                return {"status": "ok"}
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = run_agent_loop(
+                "query my knowledge base about goldfish project",
+                registry=SlowRagRegistry(),
+                max_steps=3,
+                no_llm=True,
+                no_save=True,
+                root=Path(temp),
+                step_timeout=0.05,
+                task_timeout=2,
+            )
+        rag_observations = [obs for obs in result["observations"] if obs.get("tool") == "rag_query"]
+        self.assertTrue(rag_observations)
+        self.assertEqual(rag_observations[0]["failure_type"], "timeout")
+        self.assertTrue(rag_observations[0]["timed_out"])
 
     def test_skill_router_selects_business_and_draft_skills(self):
         business = select_skills("帮我从 MCP 新闻里提炼 3 个商业想法和 MVP")
@@ -728,6 +904,20 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         self.assertIn("Jina Search", result.stdout)
         self.assertIn("DuckDuckGo", result.stdout)
 
+    def test_setup_feishu_status_works(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "setup",
+            "--once",
+            "/feishu status",
+        ]
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        result = subprocess.run(command, cwd=str(ROOT), env=env, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("当前飞书通知配置", result.stdout)
+
     def test_setup_search_noninteractive_does_not_prompt_for_key(self):
         old_tavily = os.environ.get("TAVILY_API_KEY")
         old_ignore = os.environ.get("GOLDFISH_IGNORE_USER_ENV")
@@ -740,6 +930,73 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         finally:
             _restore_env("TAVILY_API_KEY", old_tavily)
             _restore_env("GOLDFISH_IGNORE_USER_ENV", old_ignore)
+
+    def test_feishu_status_and_test_payload(self):
+        old_url = os.environ.get("FEISHU_WEBHOOK_URL")
+        old_secret = os.environ.get("FEISHU_WEBHOOK_SECRET")
+        old_app_id = os.environ.get("FEISHU_APP_ID")
+        old_app_secret = os.environ.get("FEISHU_APP_SECRET")
+        old_ignore = os.environ.get("GOLDFISH_IGNORE_USER_ENV")
+        captured = {}
+
+        def fake_transport(url, payload, timeout):
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["timeout"] = timeout
+            return {"code": 0, "msg": "success"}
+
+        try:
+            os.environ["GOLDFISH_IGNORE_USER_ENV"] = "1"
+            os.environ["FEISHU_WEBHOOK_URL"] = "https://open.feishu.cn/open-apis/bot/v2/hook/test"
+            os.environ["FEISHU_WEBHOOK_SECRET"] = "test-secret"
+            os.environ["FEISHU_APP_ID"] = "cli_test_app_id"
+            os.environ["FEISHU_APP_SECRET"] = "test-app-secret"
+            status = feishu_status({"enable_notifications": True, "notification_channels": ["feishu"], "enable_feishu_app_integration": True})
+            self.assertTrue(status["has_app_id"])
+            self.assertTrue(status["has_app_secret"])
+            self.assertTrue(status["app_integration_enabled"])
+            self.assertTrue(status["has_webhook_url"])
+            self.assertTrue(status["has_signing_secret"])
+            result = send_feishu_test({"feishu_message_type": "post", "feishu_timeout_seconds": 3}, transport=fake_transport)
+            self.assertTrue(result["sent"])
+            self.assertEqual(captured["timeout"], 3)
+            self.assertEqual(captured["payload"]["msg_type"], "post")
+            self.assertIn("timestamp", captured["payload"])
+            self.assertIn("sign", captured["payload"])
+        finally:
+            _restore_env("FEISHU_WEBHOOK_URL", old_url)
+            _restore_env("FEISHU_WEBHOOK_SECRET", old_secret)
+            _restore_env("FEISHU_APP_ID", old_app_id)
+            _restore_env("FEISHU_APP_SECRET", old_app_secret)
+            _restore_env("GOLDFISH_IGNORE_USER_ENV", old_ignore)
+
+    def test_feishu_qr_helpers_validate_safe_webhooks(self):
+        self.assertTrue(is_valid_feishu_app_credentials("cli_aaab080165f8dcff", "bBMAFXY0hEQ5ioPFWkg1gdAHuCfFZxPC"))
+        self.assertFalse(is_valid_feishu_app_credentials("app_aaab080165f8dcff", "bBMAFXY0hEQ5ioPFWkg1gdAHuCfFZxPC"))
+        self.assertFalse(is_valid_feishu_app_credentials("cli_aaab080165f8dcff", "short"))
+        self.assertTrue(is_valid_feishu_webhook("https://open.feishu.cn/open-apis/bot/v2/hook/test"))
+        self.assertTrue(is_valid_feishu_webhook("https://open.larksuite.com/open-apis/bot/v2/hook/test"))
+        self.assertFalse(is_valid_feishu_webhook("http://open.feishu.cn/open-apis/bot/v2/hook/test"))
+        self.assertFalse(is_valid_feishu_webhook("https://example.com/open-apis/bot/v2/hook/test"))
+        urls = build_pairing_urls(host="192.168.1.2", port=8765, token="abc")
+        self.assertEqual(urls.public_url, "http://192.168.1.2:8765/feishu/setup?token=abc")
+        self.assertEqual(urls.local_url, "http://127.0.0.1:8765/feishu/setup?token=abc")
+        qr = render_terminal_qr(urls.public_url)
+        self.assertIsInstance(qr, str)
+
+    def test_cli_notify_qr_help_is_registered(self):
+        command = [
+            sys.executable,
+            str(AGENT_DIR / "cli.py"),
+            "notify",
+            "qr",
+            "--help",
+        ]
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        result = subprocess.run(command, cwd=str(ROOT), env=env, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("二维码配置飞书应用 App ID 和 App Secret", result.stdout)
 
     def test_search_provider_setup_helper_for_duckduckgo(self):
         profile = find_search_provider("duckduckgo")
@@ -784,10 +1041,9 @@ class TestDailyAiNewsAgentBasic(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             answer = session.respond("/tools")
         text = output.getvalue()
-        self.assertIn("thinking", text)
-        self.assertIn("reading", text)
-        self.assertIn("done", text)
-        self.assertIn("ctx", text)
+        self.assertIn("goldfish > analyzing query...", text)
+        self.assertIn("goldfish > reading tools...", text)
+        self.assertIn("goldfish > answer ready.", text)
         self.assertIn("tools", answer)
 
     def test_cli_tools_and_history(self):

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -81,6 +82,8 @@ def rag_status(*, transport: JsonTransport | None = None, config: RagConfig | No
     ok = health.get("status") == "ok" and stats.get("status") == "ok"
     return {
         "status": "ok" if ok else "error",
+        "error_type": "" if ok else _status_error_type(health, stats),
+        "error": "" if ok else _status_error_text(health, stats),
         "enabled": cfg.enabled,
         "base_url": cfg.base_url,
         "health": health,
@@ -103,7 +106,7 @@ def rag_query(
     cfg = config or load_rag_config()
     clean_question = str(question or "").strip()
     if not clean_question:
-        return {"status": "error", "error": "question is required", "question": clean_question, "sources": []}
+        return _empty_error("question", cfg, mode="rag_query")
     if not cfg.enabled:
         return _disabled(cfg, query=clean_question)
     payload = {
@@ -118,25 +121,32 @@ def rag_query(
     if response.get("status") != "ok":
         return {
             "status": "error",
+            "mode": "rag_query",
             "question": clean_question,
             "error": response.get("error", "RAG query failed"),
+            "error_type": response.get("error_type", "retrieval_failed"),
             "request": payload,
             "sources": [],
+            "source_count": 0,
             "base_url": cfg.base_url,
+            "config_path": str(cfg.config_path),
             "safety": _safety(),
         }
     data = response.get("data") if isinstance(response.get("data"), dict) else {}
+    sources = _normalize_sources(data.get("sources") or data.get("results"))
     return {
         "status": "ok",
         "mode": "rag_query",
         "question": clean_question,
         "answer": str(data.get("answer") or ""),
-        "sources": _normalize_sources(data.get("sources")),
+        "sources": sources,
+        "source_count": len(sources),
         "llm_used": bool(data.get("llm_used", False)),
         "model": str(data.get("model") or ""),
         "warnings": [str(item) for item in data.get("warnings", [])] if isinstance(data.get("warnings"), list) else [],
         "request": payload,
         "base_url": cfg.base_url,
+        "config_path": str(cfg.config_path),
         "safety": _safety(),
     }
 
@@ -153,7 +163,7 @@ def rag_search(
     cfg = config or load_rag_config()
     clean_query = str(query or "").strip()
     if not clean_query:
-        return {"status": "error", "error": "query is required", "query": clean_query, "results": []}
+        return _empty_error("query", cfg, mode="rag_search")
     if not cfg.enabled:
         return _disabled(cfg, query=clean_query)
     payload = {
@@ -167,20 +177,30 @@ def rag_search(
     if response.get("status") != "ok":
         return {
             "status": "error",
+            "mode": "rag_search",
             "query": clean_query,
             "error": response.get("error", "RAG search failed"),
+            "error_type": response.get("error_type", "retrieval_failed"),
             "request": payload,
             "results": [],
+            "result_count": 0,
             "base_url": cfg.base_url,
+            "config_path": str(cfg.config_path),
             "safety": _safety(),
         }
+    data = response.get("data")
+    if isinstance(data, dict):
+        data = data.get("results") or data.get("sources") or data.get("matches") or []
+    results = _normalize_sources(data)
     return {
         "status": "ok",
         "mode": "rag_search",
         "query": clean_query,
-        "results": _normalize_sources(response.get("data")),
+        "results": results,
+        "result_count": len(results),
         "request": payload,
         "base_url": cfg.base_url,
+        "config_path": str(cfg.config_path),
         "safety": _safety(),
     }
 
@@ -206,9 +226,16 @@ def _safe_request(method: str, url: str, payload: Dict[str, Any] | None, timeout
             detail = exc.read().decode("utf-8", errors="replace")
         except Exception:
             detail = str(exc)
-        return {"status": "error", "error": f"HTTP {exc.code}: {detail}"}
+        return {"status": "error", "error_type": "http_error", "error": f"HTTP {exc.code}: {detail}", "url": url, "method": method, "timeout_seconds": timeout}
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        if _is_timeout(reason):
+            return {"status": "error", "error_type": "timeout", "error": f"RAG request timed out after {timeout}s", "url": url, "method": method, "timeout_seconds": timeout}
+        return {"status": "error", "error_type": "service_unavailable", "error": str(reason), "url": url, "method": method, "timeout_seconds": timeout}
+    except (TimeoutError, socket.timeout) as exc:
+        return {"status": "error", "error_type": "timeout", "error": f"RAG request timed out after {timeout}s: {exc}", "url": url, "method": method, "timeout_seconds": timeout}
     except Exception as exc:
-        return {"status": "error", "error": str(exc)}
+        return {"status": "error", "error_type": "retrieval_failed", "error": str(exc), "url": url, "method": method, "timeout_seconds": timeout}
 
 
 def _normalize_sources(value: Any) -> list[Dict[str, Any]]:
@@ -237,12 +264,57 @@ def _normalize_sources(value: Any) -> list[Dict[str, Any]]:
 def _disabled(cfg: RagConfig, *, query: str = "") -> Dict[str, Any]:
     return {
         "status": "error",
+        "mode": "rag_disabled",
         "enabled": False,
         "query": query,
         "error": "RAG is disabled in scripts/goldfish/config/rag.json",
+        "error_type": "rag_disabled",
+        "base_url": cfg.base_url,
         "config_path": str(cfg.config_path),
         "safety": _safety(),
     }
+
+
+def _empty_error(field: str, cfg: RagConfig, *, mode: str) -> Dict[str, Any]:
+    payload = {
+        "status": "error",
+        "mode": mode,
+        field: "",
+        "error": f"{field} is required",
+        "error_type": "empty_query",
+        "base_url": cfg.base_url,
+        "config_path": str(cfg.config_path),
+        "safety": _safety(),
+    }
+    if mode == "rag_query":
+        payload["sources"] = []
+        payload["source_count"] = 0
+    else:
+        payload["results"] = []
+        payload["result_count"] = 0
+    return payload
+
+
+def _is_timeout(value: Any) -> bool:
+    if isinstance(value, (TimeoutError, socket.timeout)):
+        return True
+    text = str(value).lower()
+    return "timed out" in text or "timeout" in text
+
+
+def _status_error_type(health: Dict[str, Any], stats: Dict[str, Any]) -> str:
+    for payload in (health, stats):
+        if payload.get("error_type"):
+            return str(payload["error_type"])
+    return "service_unavailable"
+
+
+def _status_error_text(health: Dict[str, Any], stats: Dict[str, Any]) -> str:
+    messages = []
+    for label, payload in [("health", health), ("stats", stats)]:
+        if payload.get("status") != "ok":
+            messages.append(f"{label}: {payload.get('error', 'request failed')}")
+    return "; ".join(messages) or "RAG status check failed"
 
 
 def _safety() -> Dict[str, bool]:

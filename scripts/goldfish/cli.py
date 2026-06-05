@@ -112,6 +112,16 @@ def command_agent(namespace: argparse.Namespace) -> int:
     return _print_json(result)
 
 
+def command_lookup(namespace: argparse.Namespace) -> int:
+    payload = _namespace_to_payload(namespace)
+    result = DEFAULT_REGISTRY.execute("knowledge_lookup", payload)
+    formatted = format_tool_response("knowledge_lookup", result, "Knowledge lookup:")
+    if formatted:
+        _print_text(formatted)
+        return 0
+    return _print_json(result)
+
+
 def command_external(namespace: argparse.Namespace) -> int:
     payload = _namespace_to_payload(namespace)
     if namespace.external_action == "list":
@@ -140,6 +150,31 @@ def command_chat(namespace: argparse.Namespace) -> int:
 
 def command_setup(namespace: argparse.Namespace) -> int:
     return run_setup(once=namespace.once)
+
+
+def command_notify_qr(namespace: argparse.Namespace) -> int:
+    from modules.feishu_qr_setup import run_feishu_qr_setup
+
+    result = run_feishu_qr_setup(
+        port=namespace.port,
+        timeout_seconds=namespace.timeout,
+        open_browser=not namespace.no_browser,
+    )
+    if result.get("status") == "ok":
+        _print_text(
+            "飞书二维码配对已完成。\n"
+            f"- app_id：{result.get('app_id_preview', '已配置')}\n"
+            f"- app_secret：{'已配置' if result.get('has_app_secret') else '未配置'}\n"
+            "- 下一步：goldfish notify status"
+        )
+        return 0
+    _print_text(
+        "飞书二维码配对未完成。\n"
+        f"- 状态：{result.get('status', 'unknown')}\n"
+        f"- 说明：{result.get('message', '')}\n"
+        "- 可以重新执行 `goldfish notify qr`，或进入 `goldfish setup` 后用 `/feishu` 手动配置。"
+    )
+    return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -195,6 +230,15 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Search query, e.g. MCP or AI Coding commercialization")
     search_parser.add_argument("--limit", type=int, default=20, help="How many results to show")
     search_parser.set_defaults(func=lambda ns: command_tool("search", ns))
+
+    lookup_parser = subparsers.add_parser("lookup", help="Search local RAG first, then public web")
+    lookup_parser.add_argument("query", help="Lookup query")
+    lookup_parser.add_argument("--top-k", type=int, default=8, help="How many RAG chunks to retrieve")
+    lookup_parser.add_argument("--web-limit", type=int, default=5, help="How many public web results to collect")
+    lookup_parser.add_argument("--timeout", type=int, default=12, help="Network timeout in seconds")
+    lookup_parser.add_argument("--search-provider", choices=["auto", "news", "tavily", "jina", "hackernews", "gdelt", "duckduckgo"], help="Public search provider")
+    lookup_parser.add_argument("--timespan", help="Optional news provider window, e.g. 24h or 7d")
+    lookup_parser.set_defaults(func=command_lookup)
 
     rag_parser = subparsers.add_parser("rag", help="Ask or search the configured local RAG knowledge base")
     rag_sub = rag_parser.add_subparsers(dest="subcommand", required=True)
@@ -268,6 +312,23 @@ def build_parser() -> argparse.ArgumentParser:
     source_health = source_sub.add_parser("health", help="Show source health summary")
     source_health.add_argument("--limit", type=int, default=8, help="How many source records to show")
     source_health.set_defaults(func=lambda ns: command_tool("source_health", ns))
+
+    notify_parser = subparsers.add_parser("notify", help="Notification commands")
+    notify_sub = notify_parser.add_subparsers(dest="subcommand", required=True)
+    notify_status = notify_sub.add_parser("status", help="Show notification and Feishu webhook status")
+    notify_status.set_defaults(func=lambda ns: command_tool("notify_status", ns))
+    notify_test = notify_sub.add_parser("test", help="Send a test notification")
+    notify_test.add_argument("--channel", choices=["feishu"], default="feishu", help="Notification channel")
+    notify_test.set_defaults(func=lambda ns: command_tool("notify_test", ns))
+    notify_qr = notify_sub.add_parser(
+        "qr",
+        help="启动临时二维码飞书配置页",
+        description="启动一个临时本地页面，用二维码配置飞书应用 App ID 和 App Secret。",
+    )
+    notify_qr.add_argument("--port", type=int, default=8765, help="本地临时配置服务优先使用的端口")
+    notify_qr.add_argument("--timeout", type=int, default=300, help="配对链接有效期，单位为秒")
+    notify_qr.add_argument("--no-browser", action="store_true", help="不要自动打开本机配置页面")
+    notify_qr.set_defaults(func=command_notify_qr)
 
     doctor_parser = subparsers.add_parser("doctor", help="Check local runtime and config")
     doctor_parser.add_argument("--json", action="store_true", help="Print the raw structured doctor report")

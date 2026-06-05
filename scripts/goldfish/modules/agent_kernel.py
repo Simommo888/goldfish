@@ -194,7 +194,17 @@ class AgentKernel:
                 updated = update_home_dashboard(date_text, self.root)
                 dashboard_path = str(updated) if updated else ""
 
-        notification_result = notify(settings, {"date": date_text, "paths": written_paths}) if not dry_run else {"sent": False, "reason": "dry-run"}
+        notification_payload = {
+            "date": date_text,
+            "paths": written_paths,
+            "counts": raw_payload["counts"],
+            "weekly_path": weekly_path,
+            "dashboard_path": dashboard_path,
+            "knowledge_report_path": knowledge_report_path,
+            "feedback_report_path": feedback_report_path,
+            "draft_paths": draft_paths,
+        }
+        notification_result = notify(settings, notification_payload) if not dry_run else {"sent": False, "reason": "dry-run"}
         run_report = {
             "date": date_text,
             "dry_run": dry_run,

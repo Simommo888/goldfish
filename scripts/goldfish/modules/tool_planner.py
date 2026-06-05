@@ -12,6 +12,7 @@ from .providers.registry import get_provider, resolve_llm_connection
 MIN_CONFIDENCE = 0.45
 PLANNER_ALLOWED_TOOLS = {
     "web_search",
+    "knowledge_lookup",
     "search",
     "rag_query",
     "rag_search",
@@ -26,6 +27,8 @@ PLANNER_ALLOWED_TOOLS = {
     "memory_review",
     "history",
     "source_health",
+    "notify_status",
+    "notify_test",
     "feedback_list",
     "config_check",
     "dry_run",
@@ -35,6 +38,20 @@ PLANNER_ALLOWED_TOOLS = {
 }
 ARG_ALLOWLIST = {
     "web_search": {"query", "mode", "limit", "fetch_limit", "timeout", "search_provider", "provider", "no_llm", "no_save", "timespan", "fetch_pages"},
+    "knowledge_lookup": {
+        "query",
+        "question",
+        "top_k",
+        "rag_top_k",
+        "limit",
+        "web_limit",
+        "timeout",
+        "search_provider",
+        "provider",
+        "timespan",
+        "retrieval_mode",
+        "category",
+    },
     "search": {"query", "limit"},
     "rag_query": {"question", "query", "top_k", "limit", "retrieval_mode", "category", "use_llm"},
     "rag_search": {"query", "question", "top_k", "limit", "retrieval_mode", "category"},
@@ -46,10 +63,11 @@ ARG_ALLOWLIST = {
     "weekly": {"no_llm", "emit_report", "date"},
     "skills": {"name"},
     "source_health": {"limit"},
+    "notify_test": {"channel"},
     "history": {"limit"},
     "external_cli": {"action", "name", "args"},
 }
-NO_ARG_TOOLS = {"doctor", "tools", "memory_show", "memory_review", "feedback_list", "config_check", "rag_status"}
+NO_ARG_TOOLS = {"doctor", "tools", "memory_show", "memory_review", "feedback_list", "config_check", "rag_status", "notify_status"}
 
 
 class PlannerProvider(Protocol):
@@ -109,6 +127,8 @@ def validate_tool_plan(
         return None
     raw_args = raw.get("args") if isinstance(raw.get("args"), dict) else {}
     normalized_tool = _normalize_tool(tool_name, message)
+    if normalized_tool not in allowed:
+        return None
     args = _sanitize_args(normalized_tool, raw_args, message, defaults)
     return ToolPlan(
         tool_name=normalized_tool,
@@ -144,12 +164,14 @@ def _planner_messages(message: str, tools: List[Dict[str, Any]]) -> List[Dict[st
         "You are goldfish's tool router. Choose exactly one existing tool for the user request. "
         "Return strict JSON only with keys: tool, args, confidence, reason. "
         "Do not answer the user. Do not invent tools. Use web_search for current/latest/public web information. "
+        "Use knowledge_lookup for ordinary lookup/search requests that should check local RAG first and then public web in separate blocks. "
         "Use rag_query for questions about the configured local RAG/Obsidian knowledge base, saved notes, or prior deposited knowledge. "
         "Use rag_search when the user explicitly asks to search source chunks in the RAG knowledge base. "
         "Use search only for goldfish local history/chat/generated reports when RAG is not requested. "
         "Use agent for multi-step research, drafting, business ideas, or knowledge deposition. "
         "Use memory_remember only when the user explicitly asks you to remember/save a durable preference or fact. "
         "Use memory_forget when the user asks to forget/delete a memory. Use memory_review for memory audits. "
+        "Use notify_status for notification/Feishu setup checks, and notify_test when the user asks to send a test notification. "
         "Use dry_run for daily report requests unless the user explicitly asks to write/save/run for real. "
         "Use external_cli only with action=list unless the user explicitly asks for an allow-listed CLI tool."
     )
@@ -160,6 +182,8 @@ def _planner_messages(message: str, tools: List[Dict[str, Any]]) -> List[Dict[st
 def _normalize_tool(tool_name: str, message: str) -> str:
     if tool_name == "run_daily" and not _explicit_real_run(message):
         return "dry_run"
+    if tool_name == "web_search" and _looks_knowledge_lookup(message):
+        return "knowledge_lookup"
     return tool_name
 
 
@@ -179,7 +203,7 @@ def _sanitize_args(tool_name: str, raw_args: Dict[str, Any], message: str, defau
         if "limit" in args:
             args["limit"] = _int(args["limit"], 8, min_value=1, max_value=50)
     elif tool_name == "rag_query":
-        question = str(args.get("question") or args.get("query") or message).strip()
+        question = _clean_knowledge_query(str(args.get("question") or args.get("query") or message))
         args = {key: value for key, value in args.items() if key in ARG_ALLOWLIST["rag_query"]}
         args["question"] = question
         if "top_k" in args:
@@ -187,13 +211,21 @@ def _sanitize_args(tool_name: str, raw_args: Dict[str, Any], message: str, defau
         if "limit" in args and "top_k" not in args:
             args["top_k"] = _int(args.pop("limit"), 8, min_value=1, max_value=20)
     elif tool_name == "rag_search":
-        query = str(args.get("query") or args.get("question") or message).strip()
+        query = _clean_knowledge_query(str(args.get("query") or args.get("question") or message))
         args = {key: value for key, value in args.items() if key in ARG_ALLOWLIST["rag_search"]}
         args["query"] = query
         if "top_k" in args:
             args["top_k"] = _int(args["top_k"], 8, min_value=1, max_value=30)
         if "limit" in args and "top_k" not in args:
             args["top_k"] = _int(args.pop("limit"), 8, min_value=1, max_value=30)
+    elif tool_name == "knowledge_lookup":
+        query = _clean_knowledge_query(str(args.get("query") or args.get("question") or message))
+        args = {key: value for key, value in args.items() if key in ARG_ALLOWLIST["knowledge_lookup"]}
+        args["query"] = query
+        args["top_k"] = _int(args.get("top_k") or args.get("rag_top_k") or args.get("limit", 8), 8, min_value=1, max_value=30)
+        args["web_limit"] = _int(args.get("web_limit", 5), 5, min_value=1, max_value=10)
+        if "timeout" in args:
+            args["timeout"] = _int(args["timeout"], 12, min_value=1, max_value=60)
     elif tool_name == "memory_remember":
         args["text"] = str(args.get("text") or message).strip()
         args.setdefault("kind", "fact")
@@ -229,6 +261,7 @@ def _sanitize_args(tool_name: str, raw_args: Dict[str, Any], message: str, defau
 def _response_hint(tool_name: str) -> str:
     return {
         "web_search": "Web search results:",
+        "knowledge_lookup": "Knowledge lookup:",
         "search": "Local search results:",
         "rag_query": "RAG answer:",
         "rag_search": "RAG search results:",
@@ -243,6 +276,8 @@ def _response_hint(tool_name: str) -> str:
         "memory_review": "Memory review:",
         "history": "Recent runs:",
         "source_health": "Source health:",
+        "notify_status": "Notification status:",
+        "notify_test": "Notification test:",
         "feedback_list": "Feedback records:",
         "config_check": "Config check:",
         "dry_run": "Dry-run completed:",
@@ -270,6 +305,39 @@ def _looks_time_sensitive(message: str) -> bool:
         "\u52a8\u6001",
     ]
     return any(marker in lowered for marker in markers)
+
+
+def _looks_knowledge_lookup(message: str) -> bool:
+    lowered = (message or "").lower()
+    if _looks_time_sensitive(lowered):
+        return False
+    if any(marker in lowered for marker in ["web search", "internet search", "online search", "search web", "search the web"]):
+        return False
+    if any(marker in message for marker in ["联网", "全网", "网页", "网上", "互联网"]):
+        return False
+    return any(marker in message for marker in ["查一下", "查找", "查询", "检索", "搜一下", "搜索一下", "找一下", "相关内容", "相关资料", "相关笔记"])
+
+
+def _clean_knowledge_query(message: str) -> str:
+    query = (message or "").strip()
+    for marker in [
+        "帮我",
+        "请帮我",
+        "麻烦",
+        "查一下",
+        "查找",
+        "查询",
+        "检索",
+        "搜一下",
+        "搜索一下",
+        "找一下",
+        "相关内容",
+        "相关资料",
+        "相关笔记",
+        "内容",
+    ]:
+        query = query.replace(marker, "")
+    return query.strip(" ，,。.!！?？") or (message or "").strip()
 
 
 def _explicit_real_run(message: str) -> bool:

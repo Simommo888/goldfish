@@ -11,6 +11,7 @@ from typing import Any, Dict
 from . import cli_theme
 from .config_loader import load_config
 from .model_setup import configure_environment, find_profile, model_menu, prompt_for_api_key, set_user_environment_variable
+from .notifier import FEISHU_APP_ID_ENV_KEYS, FEISHU_APP_SECRET_ENV_KEYS, feishu_status
 from .tool_registry import DEFAULT_REGISTRY
 from .utils import get_env
 
@@ -103,6 +104,10 @@ SETUP_HELP = """goldfish setup commands:
 /model list     Show available model profiles
 /search         Select a web search provider and enter its API key
 /search list    Show available search providers
+/feishu         配置飞书应用 App ID / App Secret
+/feishu qr      启动临时二维码飞书配置页
+/feishu status  查看飞书通知状态
+/feishu off     关闭自动通知
 /language       Choose output language
 /doctor         Check current runtime and model configuration
 /exit           Leave setup
@@ -155,9 +160,11 @@ class SetupSession:
             return self._model(text)
         if lower.startswith("/search"):
             return self._search(text)
+        if lower.startswith("/feishu"):
+            return self._feishu(text)
         if lower.startswith("/language"):
             return self._language(text)
-        return "Unknown setup command. Try /model, /search, /language, /doctor, help, or /exit."
+        return "Unknown setup command. Try /model, /search, /feishu, /language, /doctor, help, or /exit."
 
     def _model(self, command: str) -> str:
         parts = command.split(maxsplit=1)
@@ -230,6 +237,59 @@ class SetupSession:
         endpoint = input(endpoint_prompt).strip() or profile.default_endpoint
         configured = configure_search_environment(profile, api_key=api_key, endpoint=endpoint, persist_user=True)
         return _search_setup_result(configured)
+
+    def _feishu(self, command: str) -> str:
+        parts = command.split(maxsplit=1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        if arg.lower() in {"status", "list", "ls", "help"}:
+            return feishu_setup_status()
+        if arg.lower() in {"qr", "qrcode", "pair", "pairing"}:
+            from .feishu_qr_setup import run_feishu_qr_setup
+
+            result = run_feishu_qr_setup()
+            if result.get("status") == "ok":
+                return (
+                    "飞书二维码配对已完成。\n"
+                    f"- app_id：{result.get('app_id_preview', '已配置')}\n"
+                    f"- app_secret：{'已配置' if result.get('has_app_secret') else '未配置'}\n"
+                    "- 下一步：goldfish notify status"
+                )
+            return (
+                "飞书二维码配对未完成。\n"
+                f"- 状态：{result.get('status', 'unknown')}\n"
+                f"- 说明：{result.get('message', '')}\n"
+                "- 可以重新执行 /feishu qr，或用 /feishu 手动配置。"
+            )
+        if arg.lower() in {"off", "disable", "disabled"}:
+            return configure_feishu_app_integration(enable=False)
+        return self.configure_feishu()
+
+    def configure_feishu(self) -> str:
+        if not self.interactive:
+            return (
+                f"{feishu_setup_status()}\n\n"
+                "请运行 `goldfish setup`，输入 `/feishu`，然后粘贴飞书应用的 App ID 和 App Secret。"
+            )
+        existing_app_id = get_env(FEISHU_APP_ID_ENV_KEYS[1]) or get_env(FEISHU_APP_ID_ENV_KEYS[0])
+        existing_app_secret = get_env(FEISHU_APP_SECRET_ENV_KEYS[1]) or get_env(FEISHU_APP_SECRET_ENV_KEYS[0])
+        suffix = "，直接回车保留当前值" if existing_app_id else ""
+        app_id = input(f"请输入 FEISHU_APP_ID{suffix}: ").strip() or existing_app_id
+        if not app_id:
+            return "已取消：没有输入飞书 App ID。"
+        secret_suffix = "，直接回车保留当前值" if existing_app_secret else ""
+        app_secret = input(f"请输入 FEISHU_APP_SECRET{secret_suffix}: ").strip() or existing_app_secret
+        if not app_secret:
+            return "已取消：没有输入飞书 App Secret。"
+
+        os.environ["FEISHU_APP_ID"] = app_id
+        os.environ["GOLDFISH_FEISHU_APP_ID"] = app_id
+        os.environ["FEISHU_APP_SECRET"] = app_secret
+        os.environ["GOLDFISH_FEISHU_APP_SECRET"] = app_secret
+        set_user_environment_variable("FEISHU_APP_ID", app_id)
+        set_user_environment_variable("GOLDFISH_FEISHU_APP_ID", app_id)
+        set_user_environment_variable("FEISHU_APP_SECRET", app_secret)
+        set_user_environment_variable("GOLDFISH_FEISHU_APP_SECRET", app_secret)
+        return configure_feishu_app_integration(enable=True)
 
     def _language(self, command: str) -> str:
         parts = command.split(maxsplit=1)
@@ -367,6 +427,38 @@ def _search_setup_result(configured: Dict[str, str]) -> str:
         "- API key was written to user-level environment variables only.\n"
         "- Next: goldfish doctor\n"
         "- Then: goldfish research \"MCP server commercial opportunities\""
+    )
+
+
+def feishu_setup_status() -> str:
+    status = feishu_status(load_config().settings)
+    return (
+        "当前飞书通知配置：\n"
+        f"- enable_notifications：{status['enabled_in_settings']}\n"
+        f"- enable_feishu_app_integration：{status['app_integration_enabled']}\n"
+        f"- channel_enabled：{status['channel_enabled']}\n"
+        f"- FEISHU_APP_ID：{'已配置' if status['has_app_id'] else '未配置'}"
+        f"{'（' + status['app_id_preview'] + '）' if status.get('app_id_preview') else ''}\n"
+        f"- FEISHU_APP_SECRET：{'已配置' if status['has_app_secret'] else '未配置'}\n"
+        f"- feishu_auth_type：{load_config().settings.get('feishu_auth_type', 'app_credentials')}\n\n"
+        "使用 /feishu 手动配置 App ID/App Secret，使用 /feishu qr 扫码配置，使用 /feishu off 关闭飞书应用接入。"
+    )
+
+
+def configure_feishu_app_integration(*, enable: bool) -> str:
+    config = load_config()
+    settings = dict(config.settings)
+    settings["enable_feishu_app_integration"] = bool(enable)
+    settings["feishu_auth_type"] = "app_credentials"
+    _write_json(config.config_dir / "settings.json", settings)
+    if not enable:
+        return "已关闭飞书应用接入。App ID / App Secret 环境变量没有被删除。"
+    return (
+        "飞书应用接入配置已保存。\n"
+        "- app_id_env：FEISHU_APP_ID / GOLDFISH_FEISHU_APP_ID\n"
+        "- app_secret_env：FEISHU_APP_SECRET / GOLDFISH_FEISHU_APP_SECRET\n"
+        "- settings：enable_feishu_app_integration=true, feishu_auth_type=app_credentials\n"
+        "- 下一步：goldfish notify status"
     )
 
 

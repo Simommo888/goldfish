@@ -102,6 +102,10 @@ def prompt(name: str = "gf", telemetry: str = "") -> str:
     return prefix + green(f"{name} > ")
 
 
+def agent_event(message: str) -> str:
+    return green("goldfish > ") + cream(message)
+
+
 def farewell() -> str:
     return status("session closed")
 

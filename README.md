@@ -1,493 +1,292 @@
-﻿# goldfish
+# Goldfish
 
-`goldfish` 鏄竴涓潰鍚?Obsidian / Markdown 涓汉鐭ヨ瘑搴撶殑 AI 鎯呮姤 Agent銆傚畠姣忓ぉ鏀堕泦鍏紑 AI 鏂伴椈銆佸叧閿汉鐗╀笓涓氬姩鎬併€佽鏂囥€佸紑婧愰」鐩拰浜у搧鍔ㄦ€侊紝鍘婚噸銆佸垎绫汇€佽瘎鍒嗭紝骞剁敓鎴愪腑鏂?Markdown 鏃ユ姤锛涗篃鍙互鍩轰簬鏈€杩?7 澶╂棩鎶ョ敓鎴?AI 瓒嬪娍鍛ㄦ姤銆?
+Goldfish 是一个运行在 CLI 中的 AI 情报与知识沉淀 Agent。
 
-## 瀹冩瘡澶╁仛浠€涔?
+它面向 Obsidian / Markdown 个人知识库，核心目标是把公开信息检索、本地 RAG 查询、AI 情报日报、知识沉淀草稿、对话式工具调用整合到一个可维护的命令行智能体中。
 
-1. 璇诲彇 `config/*.json`銆?
-2. 鎶撳彇鍏紑 RSS / Atom 淇℃伅婧愩€?
-3. 瀵规病鏈夌ǔ瀹?RSS 鐨勬潵婧愮敓鎴愨€滃緟浜哄伐鏌ョ湅鈥濇潯鐩€?
-4. 璺熻釜 AI 鍏抽敭浜虹墿鐨勫叕寮€涓撲笟鏉ユ簮銆?
-5. 杞婚噺瑙ｆ瀽 GitHub Trending锛屽け璐ユ椂浼橀泤闄嶇骇銆?
-6. 鎶撳彇 arXiv RSS锛屽苟涓?Hugging Face Papers / Papers with Code 鐢熸垚浜哄伐鏌ョ湅鍏ュ彛銆?
-7. 杩涜鍘婚噸銆佸垎绫汇€佸叧閿瘝璇勫垎銆?
-8. 鏈?`DEEPSEEK_API_KEY` 鎴栧吋瀹?API Key 鏃惰皟鐢ㄧ湡瀹炲ぇ妯″瀷鐢熸垚鎽樿锛涙病鏈?Key 鏃朵娇鐢ㄨ鍒欐憳瑕併€?
-9. 杈撳嚭 Markdown 鏃ユ姤銆佷汉鐗╁姩鎬併€丷aw JSON锛屽繀瑕佹椂鐢熸垚鍛ㄦ姤骞舵洿鏂?Dashboard銆?
+## 项目定位
 
-## 鏈湴杩愯
+Goldfish 不是单纯的新闻脚本，也不是普通聊天机器人。它更像一个面向个人知识库的检索类 Agent：
 
-鍦ㄧ煡璇嗗簱鏍圭洰褰曡繍琛岋細
+- 先查本地 RAG 知识库，再用联网搜索补充
+- 通过自然语言调用工具
+- 自动生成 AI 情报日报和趋势周报
+- 把高价值信息沉淀成永久笔记、商业想法、Prompt、项目灵感
+- 以 CLI 友好的方式输出检索过程、来源和答案
 
-```bash
-python scripts/goldfish/goldfish.py
-```
+## 当前能力
 
-## Dry-run
+### CLI 对话
 
-Dry-run 涓嶅啓鍏?Obsidian 鏂囦欢锛屽苟涓旈粯璁や笉鑱旂綉锛岄€傚悎楠岃瘉閰嶇疆鍜屾祦绋嬶細
-
-```bash
-python scripts/goldfish/goldfish.py --dry-run --verbose
-```
-
-濡傛灉甯屾湜鐪熷疄鎶撳彇锛岃涓嶈鍔?`--dry-run`銆?
-
-## 鍏抽棴 LLM
-
-```bash
-python scripts/goldfish/goldfish.py --no-llm
-```
-
-娌℃湁 `DEEPSEEK_API_KEY` 鎴栧吋瀹?API Key 鏃剁▼搴忎細鑷姩闄嶇骇涓鸿鍒欐憳瑕侊紝涓嶄細涓柇銆?
-
-## 閰嶇疆澶фā鍨?API Key
-
-鎺ㄨ崘浣跨敤 setup 鍚戝閰嶇疆妯″瀷鍜?API Key锛?
+直接运行：
 
 ```powershell
-goldfish setup
-```
-
-杩涘叆鍚庤緭鍏ワ細
-
-```text
-/model
-```
-
-鐒跺悗閫夋嫨 DeepSeek / OpenAI / OpenAI-compatible锛屽苟杈撳叆瀵瑰簲 API Key銆侹ey 浼氬啓鍏ョ敤鎴风骇鐜鍙橀噺锛屼笉浼氬啓鍏ラ」鐩厤缃€佹棩鎶ャ€丷aw JSON 鎴?Markdown銆?
-
-## 缁存姢 sources.json
-
-鏂囦欢浣嶇疆锛歚scripts/goldfish/config/sources.json`
-
-姣忎釜鏉ユ簮鍖呭惈锛?
-
-- `name`
-- `category`
-- `priority`
-- `url`
-- `rss_url`
-- `enabled`
-- `notes`
-
-鏂板鏉ユ簮鏃跺繀椤诲啓鏄?`notes`锛岃鏄庝负浠€涔堝€煎緱鍏虫敞銆傛病鏈夌ǔ瀹?RSS 鏃舵妸 `rss_url` 鐣欑┖锛屽苟鍐欌€滃緟浜哄伐鏌ョ湅鈥濄€?
-
-## 缁存姢 people.json
-
-鏂囦欢浣嶇疆锛歚scripts/goldfish/config/people.json`
-
-鏂板 AI 澶т浆鏃跺繀椤诲彧閰嶇疆鍏紑銆佷笓涓氥€佸彲寮曠敤鏉ユ簮锛屼緥濡傚崥瀹€佸叕鍙告柊闂汇€丟itHub銆丯ewsletter銆乊ouTube銆佸叕寮€婕旇椤点€備笉瑕佽拷韪浜虹敓娲汇€佸叓鍗︺€佺矇涓濅簤璁烘垨闇€瑕佺櫥褰曠殑鍐呭銆?
-
-## 缁存姢 keywords.json
-
-鏂囦欢浣嶇疆锛歚scripts/goldfish/config/keywords.json`
-
-楂樹紭鍏堢骇鍏抽敭璇嶄細鎻愰珮璇勫垎锛岃礋闈㈠叧閿瘝浼氶檷浣庤瘎鍒嗐€備綘鐨勯噸鐐规柟鍚戝寘鎷?Agent銆丷AG銆丄I Coding銆丆odex銆丆laude Code銆丮CP銆並nowledge Base銆丄I 搴旂敤寮€鍙戝拰鎶€鏈彉鐜般€?
-
-## 鏂板 AI 淇℃伅婧?
-
-1. 鍦ㄥ悎閫傚垎绫讳笅鏂板 JSON 瀵硅薄銆?
-2. 璁剧疆 `enabled=true`銆?
-3. 鍐欐竻妤?`priority` 鍜?`notes`銆?
-4. 鏈?RSS 灏卞～ `rss_url`锛屾病鏈夊氨鐣欑┖銆?
-5. 杩愯 `--dry-run --verbose` 妫€鏌ラ厤缃€?
-
-## 鏂板 AI 澶т浆
-
-1. 鍦?`people.json` 鐨?`people` 鏁扮粍涓柊澧炲璞°€?
-2. 鍙坊鍔犲叕寮€涓撲笟鏉ユ簮銆?
-3. `reason` 蹇呴』璇存槑涓轰粈涔堝€煎緱杩借釜銆?
-4. 鏃?RSS 鐨勬潵婧愬啓鈥滃緟浜哄伐鏌ョ湅鈥濄€?
-
-## 鍏抽棴鏌愪釜鏉ユ簮
-
-鎶婂搴旀潵婧愮殑 `enabled` 鏀逛负 `false`銆?
-
-## 杈撳嚭浣嶇疆
-
-- 鏃ユ姤锛歚04_Resources/AI-News/Daily/AI鎯呮姤鏃ユ姤-YYYY-MM-DD.md`
-- AI 澶т浆鍔ㄦ€侊細`04_Resources/AI-News/People-Watch/AI澶т浆鍔ㄦ€?YYYY-MM-DD.md`
-- 鍛ㄦ姤锛歚04_Resources/AI-News/Weekly/AI瓒嬪娍鍛ㄦ姤-YYYY-WW.md`
-- Raw JSON锛歚04_Resources/AI-News/Raw/YYYY-MM-DD.json`
-
-## 鏇存柊 Obsidian Dashboard
-
-榛樿浼氭洿鏂?`01_Dashboard/Home.md`锛屽湪鏂囦欢鏈熬缁存姢涓€涓?`AI 鎯呮姤鏃ユ姤` 鍖哄煙锛屾渶澶氫繚鐣欐渶杩?7 鏉℃棩鎶ュ弻閾俱€備篃鍙互鎵嬪姩鎸囧畾锛?
-
-```bash
-python scripts/goldfish/goldfish.py --update-dashboard
-```
-
-## 鍚敤 GitHub Actions
-
-宸ヤ綔娴佹枃浠讹細`.github/workflows/goldfish.yml`
-
-鎶婄煡璇嗗簱鎺ㄥ埌 GitHub 鍚庯紝瀹冧細姣忓ぉ瀹氭椂杩愯锛屼篃鏀寔鎵嬪姩 `workflow_dispatch`銆傚鏋滀粨搴撴病鏈?`DEEPSEEK_API_KEY` Secret锛屽伐浣滄祦浼氳嚜鍔ㄧ敤 `--no-llm` 妯″紡杩愯銆傚伐浣滄祦浼氭彁浜ゆ棩鎶ャ€佸懆鎶ャ€丏ashboard锛屼互鍙婅嚜鍔ㄧ敓鎴愮殑姘镐箙绗旇 / 鍟嗕笟鎯虫硶 / Prompt / 椤圭洰鐏垫劅鑽夌銆?
-
-## 閰嶇疆 GitHub Secrets
-
-鍦?GitHub 浠撳簱璁剧疆涓柊澧?Secret锛?
-
-- `DEEPSEEK_API_KEY`
-
-涓嶈鎶?Key 鎻愪氦杩涗粨搴撱€?
-
-## 鎶婃棩鎶ュ唴瀹规矇娣€杩涚煡璇嗗簱
-
-寤鸿姣忓ぉ浠庢棩鎶ヤ腑鎸?3 鏉★細
-
-- 闀挎湡瑙傜偣娌夋穩鍒?`05_Permanent-Notes`
-- 鍟嗕笟鏈轰細娌夋穩鍒?`11_Business-Ideas`
-- Prompt 娌夋穩鍒?`09_Prompts`
-- Agent/RAG/AI Coding 鏂规硶娌夋穩鍒?`03_Areas`
-- 鏆傛椂涓嶇煡閬撴斁鍝噷灏辨斁 `00_Inbox`
-
-## 鍚庣画鎺ュ叆閫氱煡
-
-`modules/notifier.py` 宸查鐣欙細
-
-- email
-- feishu
-- wechat
-- telegram
-
-绗竴鐗堜笉鐪熸鍙戦€併€傚悗缁帴鍏ユ椂鎵€鏈?Token 浠嶅繀椤讳粠鐜鍙橀噺璇诲彇銆?
-
-## 瀹夊叏杈圭晫
-
-1. 鏈?Agent 鍙鐞嗗叕寮€淇℃伅銆?
-2. 涓嶆姄鍙栫浜轰俊鎭€?
-3. 涓嶈拷韪叓鍗︺€?
-4. 涓嶇粫杩囩櫥褰曘€?
-5. 涓嶇粫杩囧弽鐖€?
-6. 涓嶄繚瀛?Cookie銆?
-7. 涓嶆彁浜?API Key銆?
-8. 涓嶇敓鎴愯櫄鍋囨潵婧愩€?
-9. 涓嶇紪閫犱汉鐗╄鐐广€?
-10. 鏃犳硶鎶撳彇鏃舵爣璁颁负鈥滃緟浜哄伐鏌ョ湅鈥濄€?
-
-## 瀹夎渚濊禆
-
-绗竴鐗堟湁鏍囧噯搴撻檷绾ф柟妗堬紱寤鸿瀹夎鍙€変緷璧栦互鎻愬崌 RSS 鍜?LLM 鏀寔锛?
-
-```bash
-pip install -r scripts/goldfish/requirements.txt
-```
-
-## goldfish 妯″紡
-
-褰撳墠鐗堟湰宸茬粡涓嶅彧鏄棩鎶ヨ剼鏈紝鑰屾槸涓€涓瀭鐩存櫤鑳戒綋锛?
-
-- 鎰熺煡锛氳鍙栧叕寮€ RSS銆佽鏂囥€丟itHub銆佷汉鐗╁姩鎬佸拰浜у搧婧愩€?
-- 鍒ゆ柇锛氬幓閲嶃€佸垎绫汇€佽瘎鍒嗭紝骞剁粨鍚?Agent 璁板繂杩涜鍋忓ソ鍔犳潈銆?
-- 琛ㄨ揪锛氱敓鎴?AI 鎯呮姤鏃ユ姤銆佷汉鐗╁姩鎬佸拰瓒嬪娍鍛ㄦ姤銆?
-- 璁板繂锛氭妸杩愯鍘嗗彶銆佸亸濂戒富棰樸€侀珮浠峰€兼潵婧愪繚瀛樺埌 `scripts/goldfish/output_cache/agent_memory.json`锛屽苟鎶婅繍琛?瀵硅瘽鐘舵€佸啓鍏?SQLite銆?
-- 琛屽姩锛氱敓鎴愭瘡鏃ョ煡璇嗘矇娣€寤鸿鎶ュ憡銆?
-- 鍙嶉锛氱敓鎴愭瘡鏃ュ弽棣堣〃锛屼緵浣犲嬀閫夆€滃€煎緱娌夋穩 / 鍙仛椤圭洰 / 鏈夊晢涓氫环鍊?/ 澶氭帹鑽?/ 灏戞帹鑽愨€濄€?
-
-鏂板杈撳嚭锛?
-
-- 娌夋穩寤鸿锛歚04_Resources/AI-News/Reports/AI鎯呮姤娌夋穩寤鸿-YYYY-MM-DD.md`
-- 鍙嶉琛細`04_Resources/AI-News/Reports/AI鎯呮姤鍙嶉-YYYY-MM-DD.md`
-- Agent 璁板繂锛歚scripts/goldfish/output_cache/agent_memory.json`
-- Agent 鐘舵€佸簱锛歚scripts/goldfish/output_cache/goldfish.db`
-
-褰撳墠閰嶇疆鍏佽鑷姩鍒涘缓鍊欓€夎崏绋匡細
-
-```json
-"auto_create_knowledge_drafts": true
-```
-
-鍊欓€夎崏绋夸細鏍规嵁鍐呭绫诲瀷鍐欏叆锛?
-
-- 姘镐箙绗旇锛歚05_Permanent-Notes/AI-Trends`
-- 鍟嗕笟鎯虫硶锛歚11_Business-Ideas/AI-News-Inspirations`
-- Prompt锛歚09_Prompts/AI-News`
-- 椤圭洰鐏垫劅锛歚02_Projects/AI-News-Ideas`
-
-鐩稿叧閰嶇疆鍦?`settings.json`锛?
-
-- `enable_agent_memory`
-- `enable_feedback_tracking`
-- `generate_knowledge_report`
-- `auto_create_knowledge_drafts`
-- `knowledge_report_limit`
-- `knowledge_min_score`
-- `feedback_report_limit`
-
-## CLI 浣跨敤鏂瑰紡
-
-褰撳墠椤圭洰鏀寔涓ょ杩愯鏂瑰紡锛?
-
-1. 鍏煎鏃ф柟寮忥細
-
-```bash
-python scripts/goldfish/goldfish.py --dry-run --verbose
-```
-
-2. CLI 鏂瑰紡锛?
-
-```bash
-python scripts/goldfish/cli.py dry-run --verbose
-python scripts/goldfish/cli.py run --no-llm
-python scripts/goldfish/cli.py weekly
-python scripts/goldfish/cli.py config check
-python scripts/goldfish/cli.py memory show
-python scripts/goldfish/cli.py feedback list
-python scripts/goldfish/cli.py history
-python scripts/goldfish/cli.py search "MCP"
-python scripts/goldfish/cli.py skills
-python scripts/goldfish/cli.py sources health
-python scripts/goldfish/cli.py tools
-python scripts/goldfish/cli.py doctor
-python scripts/goldfish/cli.py setup
-```
-
-濡傛灉甯屾湜瀹夎鎴愮湡姝ｇ殑鍛戒护锛?
-
-```bash
-pip install -e scripts/goldfish
-```
-
-瀹夎鍚庡彲浠ヤ娇鐢細
-
-```bash
-goldfish dry-run --verbose
-goldfish run --no-llm
-goldfish run --model gpt-4.1-mini
-goldfish weekly
-goldfish config check
-goldfish memory show
-goldfish history
-goldfish search "AI Coding 鍟嗕笟鍖?
-goldfish skills
-goldfish sources health
-goldfish tools
-goldfish doctor
-goldfish setup
-```
-
-CLI 鐨?`run`銆乣dry-run`銆乣weekly`銆乣doctor`銆乣history`銆乣tools` 绛夊懡浠ょ粺涓€璧?`ToolRegistry`锛屼笉鏄暎钀界殑鑴氭湰鍒嗘敮锛涜繖璁╁悗缁帴 TUI銆侀涔︺€佸井淇°€乀elegram 鎴?Web UI 鏃跺彲浠ュ鐢ㄥ悓涓€缁勬湰鍦拌兘鍔涖€?
-
-## 鍙璇濇ā寮?
-
-杩欎釜 Agent 涔熸敮鎸佺被浼?Hermes / OpenClaw / Codex / Claude Code 鐨勪氦浜掑紡 CLI銆傚畨瑁呭悗鐩存帴杈撳叆 `goldfish` 灏变細杩涘叆瀵硅瘽妯″紡锛?
-
-```bash
 goldfish
 ```
 
-鏄惧紡鍐欐硶涔熶粛鐒跺彲鐢細
+或：
 
-```bash
+```powershell
 goldfish chat
 ```
 
-杩涘叆鍚庤浣跨敤鑻辨枃 slash commands锛?
+Goldfish 支持自然语言触发工具，也支持英文 slash command，例如：
 
 ```text
-/dry
-/run
-/weekly
-/run --write-drafts
-/config
-/memory
-/feedback
-/doctor
 /model
-/base-url https://api.openai.com/v1
-/llm
-/no-llm
+/agent
 /tools
-/history
-/search MCP
-/research MCP server best practices
-/skills
-exit
+/memory
+/notify
+/help
 ```
 
-涔熷彲浠ュ崟鍙ヨ皟鐢細
+### RAG 优先查询
 
-```bash
-goldfish chat --once "/config"
-goldfish chat --once "/dry"
-goldfish chat --no-llm --once "/memory"
-```
+Goldfish 已接入本地 RAG 工具：
 
-瀵硅瘽鍘嗗彶浼氳褰曞埌锛?
+- `rag_query`
+- `rag_search`
+- `rag_status`
+- `knowledge_lookup`
+
+默认策略：
 
 ```text
-scripts/goldfish/output_cache/chat_history.jsonl
+先查本地 RAG
+再查公共网络
+两块结果分开输出
+联网结果只作补充，不覆盖本地知识库
 ```
 
-鎵ц杈圭晫锛?
-
-- 鏄庣‘鐨勮繍琛屾剰鍥炬墠浼氭墽琛屾棩鎶ャ€佸懆鎶ャ€乨ry-run 绛夋湰鍦板姩浣溿€?
-- 鏅€氶棶棰樺彧鍥炵瓟鐢ㄦ硶銆侀厤缃€佸伐浣滄祦鍜屽畨鍏ㄨ竟鐣屻€?
-- 涓嶆墽琛屼换鎰?shell 鍛戒护銆?
-- 鏃ュ父瀵硅瘽涓嶈鍙栨垨淇濆瓨 API Key锛涙ā鍨?Key 璇烽€氳繃 `goldfish setup` 閰嶇疆銆?
-- 鏃?API Key 鏃讹紝瀵硅瘽灞傝嚜鍔ㄤ娇鐢ㄨ鍒欑悊瑙ｃ€?
-
-## 鍐呴儴鏋舵瀯
-
-褰撳墠浼樺厛鍙傝€冧簡 Hermes Agent 鐨勫嚑涓璁℃柟鍚戯細娓呮櫚鐨勫伐鍏疯竟鐣屻€丳rovider 鎶借薄銆佹湁鐘舵€佽繍琛屻€佸彲瀵硅瘽鍏ュ彛鍜岃瘖鏂兘鍔涖€?
-
-- `modules/agent_kernel.py`锛氭牳蹇冭繍琛屽唴鏍革紝CLI銆佽亰澶┿€佸畾鏃朵换鍔￠兘璋冪敤杩欓噷銆?
-- `modules/tool_registry.py`锛氭湰鍦板伐鍏锋敞鍐岃〃锛屽０鏄庡伐鍏锋槸鍚︿細鍐欐枃浠讹紝浠ュ強鍏佽鍐欏叆鐨勭煡璇嗗簱鍖哄煙銆?
-- `modules/command_router.py`锛氭妸鑷劧璇█鎴?slash 鍛戒护璺敱鍒板伐鍏枫€?
-- `modules/conversation_agent.py`锛氬彲瀵硅瘽 CLI锛屼細璇濆巻鍙插悓鏃跺啓鍏?JSONL 鍜?SQLite銆?
-- `modules/providers/`锛歄penAI-compatible Provider 灞傦紝DeepSeek銆丱penAI 鎴栧叾浠栧吋瀹规湇鍔″彧鍦ㄨ繖閲屽鐞嗐€?
-- `modules/state_store.py`锛歋QLite 鐘舵€佸簱锛岃褰曡繍琛屽巻鍙层€佹秷鎭拰鍊欓€夋礊瀵熴€?
-- `modules/source_health.py`锛氭妸姣忔鎶撳彇缁撴灉杞崲鎴愭潵婧愬仴搴峰害璁板綍銆?
-- `modules/search_engine.py`锛氭悳绱㈡棩鎶ャ€佽崏绋裤€佺姸鎬佸簱娲炲療鍜屼細璇濄€?
-- `skills/*/SKILL.md`锛氳交閲忔妧鑳借鏄庯紝鍛婅瘔 Agent 濡備綍澶勭悊鐗瑰畾浠诲姟銆?
-
-甯哥敤璇婃柇鍛戒护锛?
-
-```bash
-goldfish doctor
-goldfish tools
-goldfish history --limit 5
-goldfish search "RAG 璇勬祴"
-goldfish skills business-idea
-goldfish sources health
-goldfish chat --no-llm --once "/doctor"
-```
-
-## Skills 绯荤粺
-
-杞婚噺鎶€鑳界洰褰曚綅浜庯細
-
-```text
-scripts/goldfish/skills/
-```
-
-Built-in information-retrieval skills:
-
-- `retrieval-planning`: turn a vague research goal into a bounded tool plan.
-- `query-expansion`: generate broad, narrow, source-specific, and local-search queries.
-- `web-research`: collect public web evidence without login, cookies, or anti-scraping bypass.
-- `source-evaluation`: judge source reliability, priority, freshness, and failure risk.
-- `evidence-capture`: preserve claim-level evidence records with URLs and confidence.
-- `fact-checking`: mark claims as verified, uncertain, unsupported, or out of scope.
-- `answer-synthesis`: turn retrieved evidence into a concise source-backed answer.
-- `knowledge-routing`: decide whether findings become permanent notes, prompts, project ideas, business ideas, reports, or Inbox items.
-- `retrieval-review`: review retrieval quality and recommend follow-up searches or source changes.
-- `external-cli-tools`: call allow-listed local CLI tools such as `rg`, `git`, `python`, `go`, `node`, and `chafa`.
-- `source-curation`: maintain source lists and priorities.
-- `trend-analysis`: turn repeated signals into trend judgments.
-- `draft-writing`: write safe knowledge drafts from intelligence items.
-- `business-idea`: extract users, pain points, MVPs, pricing, and validation steps.
-- `weekly-review`: review the week and pick next focus areas.
-
-鏌ョ湅鎶€鑳斤細
-
-```bash
-goldfish skills
-goldfish skills retrieval-planning
-goldfish skills web-research
-goldfish skills business-idea
-```
-
-## External CLI Tools
-
-goldfish can call local command-line tools through an allow-listed config file:
-
-```text
-scripts/goldfish/config/external_tools.json
-```
-
-This is intentionally not an unrestricted shell. Each external tool has a name, command template, timeout, output limit, runner, and allowed working directory. Secrets are redacted from output and long output is truncated.
-
-List tools:
+示例：
 
 ```powershell
-goldfish external list
+goldfish lookup "春天相关内容"
+goldfish rag ask "春天相关内容"
+goldfish rag search "春天"
+goldfish rag status
 ```
 
-Run a tool:
+### 联网搜索
+
+Goldfish 当前搜索链路：
+
+```text
+Tavily -> Jina -> Hacker News Algolia -> GDELT -> DuckDuckGo
+```
+
+搜索配置文件：
+
+```text
+scripts/goldfish/config/search_providers.json
+```
+
+示例：
 
 ```powershell
-goldfish external run rg_search query=MCP path=scripts/goldfish
-goldfish external run git_status
-goldfish external run git_log limit=5
-goldfish external run python_version
+goldfish web "今天发生的 AI 大事" --search-provider news
 ```
 
-Preview without executing:
+如果使用本机代理：
 
 ```powershell
-goldfish external run rg_search query=Agent path=scripts/goldfish --dry-run
+$env:HTTP_PROXY="http://127.0.0.1:7897"
+$env:HTTPS_PROXY="http://127.0.0.1:7897"
 ```
 
-Inside chat:
+### Agent Loop
 
-```text
-/external
-/exec rg_search query=MCP path=scripts/goldfish
-/exec git_status
-```
-
-To add a new CLI tool, edit `external_tools.json`. Prefer `runner: direct`. Use `runner: bash` only for reviewed commands, and keep destructive or mutating tools disabled until explicitly needed.
-
-## 鎼滅储鍘嗗彶鎯呮姤
-
-鎼滅储浼氬悓鏃舵煡 SQLite 鐘舵€佸簱銆佹棩鎶ャ€佸懆鎶ャ€佹矇娣€寤鸿銆佽嚜鍔ㄨ崏绋垮拰鑱婂ぉ璁板綍锛?
-
-```bash
-goldfish search "MCP"
-goldfish search "AI Coding 鍟嗕笟鍖?
-goldfish search "RAG 璇勬祴"
-```
-
-瀵硅瘽閲屼篃鍙互璇达細
-
-```text
-/search "AI Coding 鍟嗕笟鍖?
-```
-
-## Public Web Research
-
-`search` 鍙悳绱㈡湰鍦板巻鍙叉儏鎶ワ紱`research` 浼氬幓鍏紑 Web 妫€绱㈠苟鎶撳彇鍙闂〉闈紝鐒跺悗淇濆瓨涓€浠?Markdown 鐮旂┒鎶ュ憡銆?
-```bash
-goldfish research "MCP server best practices"
-goldfish research "AI coding commercialization" --limit 8 --fetch-limit 5
-goldfish research "RAG evaluation methods" --no-llm
-```
-
-鑱婂ぉ妯″紡閲屼篃鍙互浣跨敤锛?
-```text
-/research MCP server best practices
-```
-
-杈撳嚭榛樿淇濆瓨鍒帮細
-
-```text
-04_Resources/AI-News/Reports/WebResearch-YYYY-MM-DD-QUERY.md
-```
-
-瀹夊叏杈圭晫锛氬彧璁块棶鍏紑缃戦〉锛屼笉鐧诲綍銆佷笉淇濆瓨 Cookie銆佷笉缁曡繃鍙嶇埇銆佷笉鍋氭棤闄愰€掑綊鐖彇锛涙棤娉曡闂殑椤甸潰浼氳褰曞け璐ュ師鍥犮€?
-## 璋冪敤鐪熷疄澶фā鍨?API
-
-鐪熷疄妯″瀷 API 涓嶅啓鍏ラ厤缃枃浠躲€傛帹鑽愪娇鐢細
+Goldfish 支持第一版 plan and execute Agent Loop：
 
 ```powershell
-goldfish setup
+goldfish agent "research MCP server commercial opportunities" --max-steps 3
 ```
 
-鍦?setup 涓緭鍏ワ細
+Agent Loop 会：
+
+1. 解析自然语言目标
+2. 生成计划
+3. 从 ToolRegistry 中选择工具
+4. 执行工具
+5. 记录 observation
+6. 必要时修正计划
+7. 输出最终总结
+
+安全边界：
+
+- 不执行任意 shell
+- 不绕过 ToolRegistry
+- 每步有超时
+- 总任务有超时
+- 失败过多会停止
+- 不保存 API Key
+
+任务记录目录：
 
 ```text
-/model
+scripts/goldfish/output_cache/tasks/
 ```
 
-閫夋嫨妯″瀷骞惰緭鍏?API Key 鍚庯紝杩愯锛?
+### AI 情报日报
+
+Goldfish 可以抓取公开 AI 信息源，并生成 Markdown 日报：
 
 ```powershell
 goldfish run
 ```
 
-褰撳墠榛樿閰嶇疆宸茬粡浣跨敤 DeepSeek锛?
+Dry-run，不写入 Obsidian：
+
+```powershell
+goldfish dry-run --verbose
+```
+
+生成周报：
+
+```powershell
+goldfish weekly
+```
+
+输出位置：
+
+```text
+04_Resources/AI-News/Daily
+04_Resources/AI-News/Weekly
+04_Resources/AI-News/People-Watch
+04_Resources/AI-News/Raw
+04_Resources/AI-News/Reports
+```
+
+### 知识沉淀
+
+Goldfish 可以把高价值信息沉淀为：
+
+- 永久笔记
+- 商业想法
+- Prompt
+- 项目灵感
+
+相关输出目录：
+
+```text
+05_Permanent-Notes/AI-Trends
+11_Business-Ideas/AI-News-Inspirations
+09_Prompts/AI-News
+02_Projects/AI-News-Ideas
+```
+
+草稿写入模式由 `settings.json` 控制：
+
+```json
+{
+  "draft_write_mode": "auto"
+}
+```
+
+可选值：
+
+```text
+off
+suggest
+ask
+auto
+```
+
+### Memory
+
+Goldfish 支持长期记忆：
+
+```powershell
+goldfish memory show
+goldfish memory remember "我更关注 AI Agent 商业化" --kind preference
+goldfish memory forget "AI Agent 商业化"
+goldfish memory review
+```
+
+Memory 文件：
+
+```text
+scripts/goldfish/output_cache/agent_memory.json
+```
+
+### 飞书通知
+
+查看通知状态：
+
+```powershell
+goldfish notify status
+```
+
+发送测试消息：
+
+```powershell
+goldfish notify test
+```
+
+临时二维码配置：
+
+```powershell
+goldfish notify qr
+```
+
+飞书 webhook 和 secret 只写入用户级环境变量，不写入项目文件。
+
+## 安装
+
+进入项目目录：
+
+```powershell
+cd D:\goldfish
+```
+
+安装依赖：
+
+```powershell
+python -m pip install -r scripts\goldfish\requirements.txt
+```
+
+安装为全局命令：
+
+```powershell
+python -m pip install -e .
+```
+
+安装后：
+
+```powershell
+goldfish
+```
+
+如果还没有安装为全局命令，也可以直接运行：
+
+```powershell
+python scripts\goldfish\cli.py
+```
+
+## 配置模型
+
+进入 setup：
+
+```powershell
+goldfish setup
+```
+
+在 setup 中输入：
+
+```text
+/model
+```
+
+然后选择 DeepSeek / OpenAI / OpenAI-compatible，并输入对应 API Key。
+
+当前默认模型配置在：
+
+```text
+scripts/goldfish/config/settings.json
+```
+
+示例：
 
 ```json
 {
@@ -497,160 +296,139 @@ goldfish run
 }
 ```
 
-濡傛灉瑕佷复鏃惰鐩栨ā鍨嬶細
+注意：不要把 API Key 写入配置文件或提交到仓库。
 
-```powershell
-goldfish run --provider deepseek --model deepseek-v4-pro --base-url https://api.deepseek.com
+## 配置 RAG
+
+RAG 配置文件：
+
+```text
+scripts/goldfish/config/rag.json
 ```
 
-娌℃湁 API Key 鏃讹細
-
-```powershell
-goldfish run --no-llm
-```
-
-瀹夊叏瑙勫垯涓嶅彉锛氫笉瑕佹妸 API Key 鍐欏叆 `settings.json`銆佹棩鎶ャ€丷aw JSON 鎴栦换浣?Markdown銆?
-
-濡傛灉浣犳洿鍠滄鎵嬪姩鐜鍙橀噺锛屼篃浠嶇劧鍙互浣跨敤锛?
-
-```powershell
-$env:DEEPSEEK_API_KEY="浣犵殑 DeepSeek API Key"
-$env:AI_NEWS_LLM_MODEL="deepseek-v4-pro"
-$env:AI_NEWS_LLM_BASE_URL="https://api.deepseek.com"
-```
-
-鏀寔鐨?Key 鐜鍙橀噺浼樺厛绾э細
-
-1. `AI_NEWS_LLM_API_KEY`
-2. `DEEPSEEK_API_KEY`
-3. `OPENAI_API_KEY`
-
-濡傛灉浣犱箣鍚庢敼鐢ㄥ叾浠?OpenAI-compatible 鏈嶅姟锛屽彲浠ョ户缁敤锛?
-
-```powershell
-$env:AI_NEWS_LLM_API_KEY="浣犵殑鍏煎鎺ュ彛 Key"
-goldfish run --provider openai --model "浣犵殑妯″瀷鍚? --base-url "https://浣犵殑鍏煎鎺ュ彛/v1"
-```
-
-## 鑷姩鐢熸垚鐭ヨ瘑鑽夌
-
-褰撳墠宸茬粡鍏佽 Agent 榛樿鑷姩鐢熸垚鍊欓€夎崏绋匡細
+默认连接：
 
 ```json
-"auto_create_knowledge_drafts": true,
-"draft_write_mode": "auto"
+{
+  "enabled": true,
+  "mode": "http",
+  "base_url": "http://127.0.0.1:8020",
+  "retrieval_mode": "hybrid",
+  "top_k": 8
+}
 ```
 
-`draft_write_mode` 鏀寔锛?
-
-- `off`锛氫笉鍐欒崏绋裤€?
-- `suggest`锛氬彧鐢熸垚娌夋穩寤鸿鎶ュ憡锛屼笉鍐欏叆鑽夌鐩綍銆?
-- `ask`锛氬璇濇ā寮忎笅绛夊緟纭锛涢潪浜や簰杩愯鍙爣璁伴渶瑕佺‘璁ゃ€?
-- `auto`锛氳嚜鍔ㄥ啓鍏ュ€欓€夎崏绋裤€?
-
-鍛戒护琛屽彲涓存椂瑕嗙洊锛?
-
-```bash
-goldfish run --draft-mode suggest
-goldfish run --draft-mode ask
-goldfish run --draft-mode off
-goldfish run --write-drafts
-```
-
-姝ｅ紡杩愯 `goldfish run` 鍚庯紝闄や簡鏃ユ姤銆佷汉鐗╁姩鎬併€佹矇娣€寤鸿銆佸弽棣堣〃锛岃繕浼氭寜鍐呭绫诲瀷鍐欏€欓€夎崏绋匡細
-
-- 姘镐箙绗旇锛歚05_Permanent-Notes/AI-Trends`
-- 鍟嗕笟鎯虫硶锛歚11_Business-Ideas/AI-News-Inspirations`
-- Prompt锛歚09_Prompts/AI-News`
-- 椤圭洰鐏垫劅锛歚02_Projects/AI-News-Ideas`
-
-鑽夌鏄€欓€夋潗鏂欙紝涓嶇瓑浜庢渶缁堢煡璇嗐€備綘浠嶇劧闇€瑕佹鏌ユ潵婧愩€佹敼鍐欐垚鑷繁鐨勫垽鏂紝鍐嶉摼鎺ュ埌鐩稿叧 MOC銆?
-
-## CLI Pixel Theme
-
-`goldfish` uses a terminal-native Bubble Tea / Lip Gloss startup screen that follows the supplied reference layout:
-
-- `goldfish` starts directly in Python chat mode with a framed startup dashboard.
-- The startup dashboard itself does not draw `gf >`; the real chat prompt is owned by the Python conversation loop.
-- The default startup renderer is `go`, a Go Bubble Tea / Lip Gloss renderer built from `scripts/goldfish/tui/startup`.
-- The Go renderer is JSON-driven. Edit `scripts/goldfish/tui/startup/layout.json` to move or resize the page regions.
-- It uses Unicode box drawing, Unicode block characters, ANSI TrueColor, and real text.
-- It does not render a screenshot, convert PNG to ANSI, rasterize text, use emoji-width glyphs, or use image protocols.
-- Default JSON canvas: `120 columns x 40 rows`; rendered terminal footprint: `124 columns x 42 rows` with the outer frame.
-- Recommended font: Cascadia Mono, Consolas, or JetBrains Mono.
-- If the terminal is too small, goldfish shows a resize hint instead of rendering a broken layout.
-- Non-interactive scripts and tests use the ANSI/Rich fallback so command output remains manageable.
-- The dashboard keeps the reference layout: large left hero panel, right status/session column, three bottom panels, and command bar area.
-- Chat slash commands remain English-only: `/research`, `/run`, `/dry`, `/doctor`, `/tools`, `/model`.
-- ANSI colors are used when the terminal supports them. Set `NO_COLOR=1` or `GOLDFISH_NO_COLOR=1` to disable color.
-- Force the Go renderer with `GOLDFISH_STARTUP_RENDERER=go`.
-- Use a custom layout with `GOLDFISH_STARTUP_LAYOUT=C:\path\to\layout.json`, or preview directly with `goldfish-startup.exe --once --layout C:\path\to\layout.json`.
-- Rebuild the renderer with `go build -o scripts/goldfish/output_cache/bin/goldfish-startup.exe ./scripts/goldfish/tui/startup`.
-- Force the legacy fallback with `GOLDFISH_STARTUP_RENDERER=ansi`.
-
-## Agent Loop
-
-`agent_loop` is the first goal-driven layer for goldfish. It turns a natural-language goal into a small bounded plan, calls existing ToolRegistry tools, records observations, and writes a task workspace.
-
-It does not execute arbitrary shell commands. First-version allowed tools are:
-
-- `research_web`
-- `search`
-- `memory_show`
-- `tools`
-- `doctor`
-- `dry_run`
-- `run_daily`
-
-Run from the CLI:
+可以用环境变量覆盖：
 
 ```powershell
-goldfish agent "research MCP server commercial opportunities"
-goldfish agent "study AI coding agent market trends" --no-llm
-goldfish agent "search previous RAG notes" --max-steps 3
+$env:GOLDFISH_RAG_BASE_URL="http://127.0.0.1:8020"
 ```
 
-Run inside chat:
+## 目录结构
 
 ```text
-/agent research MCP server commercial opportunities and draft 3 business ideas
+D:\goldfish
+  README.md
+  pyproject.toml
+  Dockerfile
+  docker-compose.yml
+  scripts/goldfish/
+    cli.py
+    goldfish.py
+    config/
+    modules/
+    skills/
+    templates/
+    tests/
+    tui/
+  04_Resources/AI-News/
+  05_Permanent-Notes/
+  09_Prompts/
+  11_Business-Ideas/
 ```
 
-Natural-language research-like requests in chat can also route to the agent loop, for example:
+## 核心模块
 
 ```text
-research MCP business opportunities
-study RAG evaluation trends
-甯垜鐮旂┒ AI coding agent 鐨勫晢涓氭満浼?```
-
-Task workspaces are saved under:
-
-```text
-scripts/goldfish/output_cache/tasks/task-YYYYMMDD-HHMMSS-xxxx-*/
+scripts/goldfish/cli.py                     CLI 主入口
+scripts/goldfish/modules/tool_registry.py   工具注册中心
+scripts/goldfish/modules/conversation_agent.py
+scripts/goldfish/modules/command_router.py
+scripts/goldfish/modules/tool_planner.py
+scripts/goldfish/modules/agent_loop.py
+scripts/goldfish/modules/rag_client.py
+scripts/goldfish/modules/web_researcher.py
+scripts/goldfish/modules/response_formatter.py
+scripts/goldfish/modules/agent_memory.py
+scripts/goldfish/modules/setup_agent.py
 ```
 
-Each workspace contains:
+## CLI 输出约束
+
+Goldfish 是 CLI Agent，不是网页聊天机器人。
+
+检索类输出默认遵循：
 
 ```text
-goal.md
-plan.md
-observations.json
-tool_calls.jsonl
-final.md
+goldfish > analyzing query...
+goldfish > searching knowledge base...
+goldfish > found 12 relevant chunks
+goldfish > searching web...
+goldfish > selected 3 sources
+
+sources:
+  [1] 标题 - 路径
+
+answer:
+基于来源给出答案。[1]
+
+references:
+  [1] 标题 - 路径
 ```
 
-Safety boundaries:
+原则：
 
-- All tool execution goes through `ToolRegistry`.
-- No arbitrary shell execution.
-- No API keys are written to task files.
-- Tool results are truncated before saving when too long.
-- `run_daily` defaults to dry-run behavior unless the goal clearly asks to write/save/run for real.
-- Public web research still follows the existing no-login, no-cookie, no-anti-scraping-bypass boundary.
+- 短句
+- 可扫描
+- 可复制
+- 不刷屏
+- 不暴露 embedding_score / rerank_score / top_k 等内部细节
+- 有来源和引用
 
-Current first-version limitations:
+## 测试
 
-- Planning is mostly rule-based, with optional LLM summary only when a configured API key exists.
-- It can do short 3-8 step workflows, not long autonomous projects yet.
-- It records observations, but does not yet dynamically redraw the startup UI state.
-- It can choose existing tools only; it cannot invent new tools or execute shell commands.
+编译检查：
+
+```powershell
+python -m compileall -q scripts\goldfish
+```
+
+单元测试：
+
+```powershell
+python -m unittest scripts.goldfish.tests.test_basic
+```
+
+## 安全边界
+
+Goldfish 必须遵守：
+
+1. 只处理公开信息
+2. 不抓取私人信息
+3. 不追踪八卦
+4. 不绕过登录
+5. 不绕过反爬
+6. 不保存 Cookie
+7. 不提交 API Key
+8. 不生成虚假来源
+9. 不编造人物观点
+10. 无法抓取时明确降级
+
+## 当前限制
+
+- Agent Loop 是第一版有限步执行，还不是完整通用自主 Agent
+- 联网搜索质量依赖 Tavily / Jina 等外部服务
+- 本地 RAG 需要独立服务运行
+- 启动页视觉仍受终端尺寸、字体、编码影响
+- 对复杂问题的最终综合回答仍需要继续增强引用式生成能力
+

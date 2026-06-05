@@ -60,15 +60,24 @@ def response_system_prompt(kind: str = "default", language: str = "zh-CN") -> st
     rules = "\n".join(f"- {rule}" for rule in global_rules)
     return (
         "You are goldfish, a local CLI intelligence and knowledge-deposition agent.\n"
-        "Use the fixed Goldfish response frame. Return readable terminal-style Markdown, not raw JSON.\n"
+        "Use a minimal CLI response frame. Return readable terminal text, not raw JSON.\n"
         "Do not use Markdown heading markers like ## unless the user asks for a document.\n"
         "Do not mention that you are following a template.\n"
         "Do not use emoji as layout markers.\n"
+        "Do not expose embedding scores, rerank scores, top_k, or other internal retrieval details.\n"
         f"Reply language: {language}.\n\n"
-        "Preferred visible frame:\n"
-        f"goldfish · {template.get('mode', kind)}\n"
-        "status: ready · answer: grounded\n"
-        "[结论]\n[关键依据]\n[判断]\n[下一步]\n\n"
+        "Preferred visible frame for retrieval answers:\n"
+        "goldfish > analyzing query...\n"
+        "goldfish > searching knowledge base...\n"
+        "goldfish > found N relevant chunks\n"
+        "goldfish > selecting sources...\n"
+        "goldfish > selected M sources\n\n"
+        "sources:\n"
+        "  [1] Title / Necessary path\n\n"
+        "answer:\n"
+        "Short, source-backed answer with simple citations like [1].\n\n"
+        "references:\n"
+        "  [1] Title / Necessary path\n\n"
         "Required section order:\n"
         f"{section_lines}\n\n"
         "Global rules:\n"
@@ -148,13 +157,347 @@ def format_tool_response(tool_name: str, result: Dict[str, Any], response_hint: 
         return _with_hint(response_hint, summary + "\n" + meta)
     if tool_name in {"memory_show", "memory_remember", "memory_forget", "memory_review"}:
         return _format_memory(tool_name, result, response_hint)
+    if tool_name == "knowledge_lookup":
+        return _format_knowledge_lookup_stream(result)
     if tool_name == "web_search":
-        return _format_web_search(result, response_hint)
+        return _format_web_search_stream(result)
     if tool_name == "search":
-        return _format_local_search(result, response_hint)
+        return _format_local_search_stream(result)
     if tool_name in {"rag_query", "rag_search", "rag_status"}:
-        return _format_rag(tool_name, result, response_hint)
+        return _format_rag_stream(tool_name, result)
+    if tool_name in {"notify_status", "notify_test"}:
+        return _format_notify(tool_name, result, response_hint)
     return ""
+
+
+def _format_knowledge_lookup_stream(result: Dict[str, Any]) -> str:
+    query = str(result.get("query") or "")
+    rag = result.get("rag") if isinstance(result.get("rag"), dict) else {}
+    web = result.get("web") if isinstance(result.get("web"), dict) else {}
+    rag_items = _rag_results(rag)
+    web_items = _web_results(web)
+    selected_rag = rag_items[:3]
+    selected_web = web_items[:3]
+
+    lines = [
+        _event("analyzing query..."),
+        _event("searching knowledge base..."),
+        _event(f"found {_rag_count(rag, rag_items)} relevant chunks"),
+    ]
+    if rag.get("status") == "error":
+        lines.append(_event(f"knowledge base search degraded: {rag.get('error_type', 'error')}"))
+    lines.extend(
+        [
+            _event("searching web..."),
+            _event(f"found {_web_count(web, web_items)} public results"),
+        ]
+    )
+    if web.get("status") == "error":
+        lines.append(_event(f"web search degraded: {web.get('error_type', 'error')}"))
+    selected_total = len(selected_rag) + len(selected_web)
+    lines.extend([_event("selecting sources..."), _event(f"selected {selected_total} sources"), ""])
+
+    lines.extend(_source_block("RAG 查询结果", selected_rag, prefix=""))
+    lines.append("")
+    lines.extend(_source_block("联网查询结果", selected_web, prefix="W"))
+    lines.append("")
+    lines.extend(
+        [
+            "一致性约束:",
+            "  RAG 查询结果和联网查询结果保持分块展示；联网结果只作补充，不覆盖本地知识库。",
+        ]
+    )
+    lines.append("")
+    lines.extend(["answer:", *_wrap(_knowledge_answer(selected_rag, selected_web, rag, web), _answer_width())])
+    lines.append("")
+    lines.extend(_references_block(selected_rag, selected_web))
+    return redact_secret_text("\n".join(lines).rstrip() + "\n")
+
+
+def _format_rag_stream(tool_name: str, result: Dict[str, Any]) -> str:
+    if tool_name == "rag_status":
+        stats = result.get("stats", {})
+        stats_data = stats.get("data") if isinstance(stats, dict) and isinstance(stats.get("data"), dict) else {}
+        health = result.get("health", {})
+        health_data = health.get("data") if isinstance(health, dict) and isinstance(health.get("data"), dict) else {}
+        lines = [
+            _event("checking knowledge base status..."),
+            "",
+            "status:",
+            f"  service: {health_data.get('status') or health.get('status', result.get('status', 'unknown'))}",
+            f"  documents: {stats_data.get('documents', 0)}",
+            f"  chunks: {stats_data.get('chunks', 0)}",
+            f"  base_url: {result.get('base_url', '')}",
+        ]
+        return redact_secret_text("\n".join(lines).rstrip() + "\n")
+
+    items = _rag_results(result)
+    selected = items[:5]
+    query = str(result.get("query") or result.get("question") or "")
+    lines = [
+        _event("analyzing query..."),
+        _event("searching knowledge base..."),
+        _event(f"found {_rag_count(result, items)} relevant chunks"),
+        _event("selecting sources..."),
+        _event(f"selected {len(selected)} sources"),
+        "",
+    ]
+    lines.extend(_source_block("sources", selected, prefix=""))
+    lines.append("")
+    answer = str(result.get("answer") or result.get("error") or "")
+    if tool_name == "rag_search":
+        answer = _rag_search_answer(query, selected, result)
+    elif not answer:
+        answer = "No answer was returned from the knowledge base. Check the references and try a narrower query."
+    lines.extend(["answer:", *_wrap(_attach_first_reference(answer, selected), _answer_width())])
+    lines.append("")
+    lines.extend(_references_block(selected, []))
+    return redact_secret_text("\n".join(lines).rstrip() + "\n")
+
+
+def _format_web_search_stream(result: Dict[str, Any]) -> str:
+    if isinstance(result.get("research"), dict):
+        research = result["research"]
+        results = research.get("results") if isinstance(research.get("results"), list) else []
+        query = str(research.get("query") or result.get("query") or "")
+    else:
+        results = _web_results(result)
+        query = str(result.get("query") or "")
+    selected = results[:5]
+    lines = [
+        _event("analyzing query..."),
+        _event("searching web..."),
+        _event(f"found {_web_count(result, results)} public results"),
+        _event("selecting sources..."),
+        _event(f"selected {len(selected)} sources"),
+        "",
+    ]
+    lines.extend(_source_block("sources", selected, prefix=""))
+    lines.append("")
+    lines.extend(["answer:", *_wrap(_web_answer(query, selected, result), _answer_width())])
+    lines.append("")
+    lines.extend(_references_block(selected, []))
+    return redact_secret_text("\n".join(lines).rstrip() + "\n")
+
+
+def _format_local_search_stream(result: Dict[str, Any]) -> str:
+    results = result.get("results") if isinstance(result.get("results"), list) else []
+    selected = results[:5]
+    query = str(result.get("query") or "")
+    lines = [
+        _event("analyzing query..."),
+        _event("searching local history..."),
+        _event(f"found {result.get('count', len(results))} local results"),
+        _event("selecting sources..."),
+        _event(f"selected {len(selected)} sources"),
+        "",
+    ]
+    lines.extend(_source_block("sources", selected, prefix=""))
+    lines.append("")
+    lines.extend(["answer:", *_wrap(_local_search_answer(query, selected, result), _answer_width())])
+    lines.append("")
+    lines.extend(_references_block(selected, []))
+    return redact_secret_text("\n".join(lines).rstrip() + "\n")
+
+
+def _event(message: str) -> str:
+    return f"goldfish > {message}"
+
+
+def _rag_results(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items = payload.get("results") if isinstance(payload.get("results"), list) else payload.get("sources")
+    return items if isinstance(items, list) else []
+
+
+def _web_results(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items = payload.get("results") if isinstance(payload.get("results"), list) else []
+    return items if isinstance(items, list) else []
+
+
+def _rag_count(payload: Dict[str, Any], items: List[Dict[str, Any]]) -> int:
+    value = payload.get("result_count", payload.get("source_count", len(items)))
+    return _safe_int(value, len(items))
+
+
+def _web_count(payload: Dict[str, Any], items: List[Dict[str, Any]]) -> int:
+    value = payload.get("count", len(items))
+    return _safe_int(value, len(items))
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return max(0, int(value))
+    except Exception:
+        return default
+
+
+def _source_block(title: str, items: List[Dict[str, Any]], *, prefix: str) -> List[str]:
+    lines = [f"{title}:"]
+    if not items:
+        lines.append("  none")
+        return lines
+    for index, item in enumerate(items, start=1):
+        label = f"{prefix}{index}" if prefix else str(index)
+        lines.append(f"  [{label}] {_source_title_path(item)}")
+    return lines
+
+
+def _references_block(rag_items: List[Dict[str, Any]], web_items: List[Dict[str, Any]]) -> List[str]:
+    lines = ["references:"]
+    combined: List[tuple[str, Dict[str, Any]]] = []
+    combined.extend((str(index), item) for index, item in enumerate(rag_items, start=1))
+    combined.extend((f"W{index}", item) for index, item in enumerate(web_items, start=1))
+    if not combined:
+        lines.append("  none")
+        return lines
+    for label, item in combined:
+        lines.append(f"  [{label}] {_reference_text(item)}")
+    return lines
+
+
+def _source_title_path(item: Dict[str, Any]) -> str:
+    title = str(item.get("title") or item.get("heading") or item.get("path") or item.get("file_path") or item.get("url") or "Untitled").strip()
+    heading = str(item.get("heading") or "").strip()
+    path = str(item.get("file_path") or item.get("path") or item.get("url") or "").strip()
+    parts = [title]
+    if heading and heading != title:
+        parts.append(heading)
+    label = " / ".join(part for part in parts if part)
+    if path and path not in label:
+        label = f"{label} - {path}"
+    return _clip(label, 130)
+
+
+def _reference_text(item: Dict[str, Any]) -> str:
+    return _source_title_path(item)
+
+
+def _knowledge_answer(rag_items: List[Dict[str, Any]], web_items: List[Dict[str, Any]], rag: Dict[str, Any], web: Dict[str, Any]) -> str:
+    if rag.get("status") == "error" and web.get("status") == "error":
+        return "知识库和联网检索都失败了。请先检查 RAG 服务状态和搜索源配置。"
+    if rag_items and web_items:
+        return (
+            f"优先参考本地 RAG：最相关的本地资料是「{_short_title(rag_items[0])}」[1]。"
+            f"联网结果只作补充：最相关的公开来源是「{_short_title(web_items[0])}」[W1]。"
+            "两块内容保持分离；未经人工核验，不要把网页摘要当成本地知识库结论。"
+        )
+    if rag_items:
+        return f"知识库返回了相关本地资料，优先查看「{_short_title(rag_items[0])}」[1]。"
+    if web_items:
+        return f"本地 RAG 暂未选出可用来源，但联网检索找到了「{_short_title(web_items[0])}」[W1]。沉淀进知识库前请先核验原文。"
+    return "没有选出可用来源。请缩小问题范围，或检查知识库与搜索源是否可用。"
+
+
+def _rag_search_answer(query: str, items: List[Dict[str, Any]], result: Dict[str, Any]) -> str:
+    if result.get("status") == "error":
+        return f"知识库检索失败：{result.get('error_type', 'error')}。"
+    if not items:
+        return f"没有为「{query}」选出相关知识库片段。"
+    return f"「{query}」最相关的知识库来源是「{_short_title(items[0])}」[1]。作为最终事实使用前，请打开 reference 核验上下文。"
+
+
+def _web_answer(query: str, items: List[Dict[str, Any]], result: Dict[str, Any]) -> str:
+    if result.get("status") == "error":
+        return f"联网检索失败：{result.get('error_type', 'error')}。"
+    if not items:
+        return f"没有为「{query}」选出公开网页结果。"
+    return f"联网检索为「{query}」找到了候选来源。优先查看「{_short_title(items[0])}」[1]，再核验原始网页。"
+
+
+def _local_search_answer(query: str, items: List[Dict[str, Any]], result: Dict[str, Any]) -> str:
+    if result.get("error"):
+        return f"本地搜索失败：{result.get('error')}。"
+    if not items:
+        return f"没有为「{query}」选出本地 goldfish 历史结果。"
+    return f"「{query}」最相关的本地历史结果是「{_short_title(items[0])}」[1]。"
+
+
+def _attach_first_reference(answer: str, items: List[Dict[str, Any]]) -> str:
+    cleaned = answer.strip()
+    if not cleaned or not items or re.search(r"\[\d+\]", cleaned):
+        return cleaned
+    return cleaned.rstrip(".。") + "。[1]"
+
+
+def _short_title(item: Dict[str, Any]) -> str:
+    return _clip(str(item.get("title") or item.get("heading") or item.get("path") or item.get("file_path") or item.get("url") or "Untitled"), 70)
+
+
+def _answer_width() -> int:
+    return max(56, min(shutil.get_terminal_size((100, 40)).columns - 2, 100))
+
+
+def _format_knowledge_lookup(result: Dict[str, Any], response_hint: str) -> str:
+    width = _target_width()
+    status = "ready" if result.get("status") == "ok" else "degraded"
+    query = str(result.get("query") or "")
+    rag = result.get("rag") if isinstance(result.get("rag"), dict) else {}
+    web = result.get("web") if isinstance(result.get("web"), dict) else {}
+
+    lines = _header("knowledge_lookup", status, width, color=True)
+    lines.extend(
+        _section(
+            "检索策略",
+            [
+                f"query: {query}",
+                "执行顺序：先查询本地 RAG 知识库，再查询公开联网搜索。",
+                "回答约束：RAG 与联网结果分块展示，不互相覆盖、不合并成未经核验的统一结论。",
+            ],
+            width,
+            color=True,
+        )
+    )
+    lines.extend(_section("RAG 查询结果", _knowledge_rag_lines(rag), width, color=True))
+    lines.extend(_section("联网查询结果", _knowledge_web_lines(web), width, color=True))
+    lines.extend(
+        _section(
+            "一致性约束",
+            [
+                "本地 RAG 是优先参考；联网结果只作为公开信息补充。",
+                "如果两块内容看起来不一致，goldfish 保留来源边界，并提示你打开原始来源人工核验。",
+                "不会编造来源、不会把联网结论改写成本地知识库结论。",
+            ],
+            width,
+            color=True,
+        )
+    )
+    lines.append(_rule(width, color=True))
+    return _with_hint(response_hint, "\n".join(lines).rstrip() + "\n")
+
+
+def _knowledge_rag_lines(rag: Dict[str, Any]) -> List[str]:
+    if not rag:
+        return ["RAG 工具没有返回结构化结果。"]
+    if rag.get("status") == "error":
+        return [f"RAG 查询失败：{rag.get('error_type', 'unknown')} - {rag.get('error', '')}"]
+    sources = rag.get("results") if isinstance(rag.get("results"), list) else rag.get("sources")
+    if not isinstance(sources, list):
+        sources = []
+    count = rag.get("result_count", rag.get("source_count", len(sources)))
+    lines = [f"命中片段：{count}"]
+    lines.extend(_rag_source_card(index, item, color=True) for index, item in enumerate(sources[:5], start=1))
+    if len(lines) == 1:
+        lines.append("本地 RAG 暂未命中可展示片段。")
+    return lines
+
+
+def _knowledge_web_lines(web: Dict[str, Any]) -> List[str]:
+    if not web:
+        return ["联网搜索没有返回结构化结果。"]
+    if web.get("status") == "error":
+        return [f"联网查询失败：{web.get('error_type', 'unknown')} - {web.get('error', '')}"]
+    results = web.get("results") if isinstance(web.get("results"), list) else []
+    provider_order = web.get("provider_order", [])
+    if isinstance(provider_order, list):
+        provider_text = ", ".join(str(item) for item in provider_order)
+    else:
+        provider_text = str(provider_order or "")
+    provider = str(web.get("provider") or provider_text or "configured search")
+    lines = [f"搜索源：{provider}", f"公开结果：{web.get('count', len(results))}"]
+    lines.extend(_source_cards(results[:5], color=True))
+    if len(lines) == 2:
+        lines.append("联网搜索暂未命中可展示结果。")
+    return lines
 
 
 def _format_web_search(result: Dict[str, Any], response_hint: str) -> str:
@@ -290,6 +633,37 @@ def _format_rag(tool_name: str, result: Dict[str, Any], response_hint: str) -> s
         "context": cards or ["没有可展示的引用片段。"],
         "judgment": "这是基于本地 RAG/Obsidian 知识库的回答；如果答案很关键，仍建议打开来源片段核验。",
         "next_actions": warnings[:3] + ["把高价值结论沉淀到永久笔记或项目文档。"],
+    }
+    return _with_hint(response_hint, render_markdown("default", values, color=True))
+
+
+def _format_notify(tool_name: str, result: Dict[str, Any], response_hint: str) -> str:
+    if tool_name == "notify_test":
+        payload = result.get("result") if isinstance(result.get("result"), dict) else result
+        values = {
+            "direct_answer": "飞书测试通知已发送。" if payload.get("sent") else "飞书测试通知没有发送成功。",
+            "context": [
+                f"channel: {payload.get('channel', result.get('channel', 'feishu'))}",
+                f"webhook: {payload.get('webhook_url_preview', '')}",
+                f"reason: {payload.get('reason', payload.get('error', ''))}",
+            ],
+            "judgment": "如果没有收到消息，请检查飞书群机器人 Webhook、签名密钥和本机网络代理。",
+            "next_actions": ["配置 FEISHU_WEBHOOK_URL。", "如开启签名，配置 FEISHU_WEBHOOK_SECRET。", "确认 settings.json 中 enable_notifications=true 后再运行日报自动推送。"],
+        }
+        return _with_hint(response_hint, render_markdown("default", values, color=True))
+
+    feishu = result.get("feishu") if isinstance(result.get("feishu"), dict) else {}
+    values = {
+        "direct_answer": "这是当前通知配置状态。",
+        "context": [
+            f"notifications_enabled: {result.get('notifications_enabled', False)}",
+            f"feishu_channel_enabled: {feishu.get('channel_enabled', False)}",
+            f"has_webhook_url: {feishu.get('has_webhook_url', False)}",
+            f"has_signing_secret: {feishu.get('has_signing_secret', False)}",
+            f"message_type: {feishu.get('message_type', 'post')}",
+        ],
+        "judgment": "goldfish 会通过环境变量读取飞书 Webhook，不会把密钥写入项目文件。",
+        "next_actions": ["设置 FEISHU_WEBHOOK_URL。", "需要签名时设置 FEISHU_WEBHOOK_SECRET。", "用 goldfish notify test 验证链路。"],
     }
     return _with_hint(response_hint, render_markdown("default", values, color=True))
 

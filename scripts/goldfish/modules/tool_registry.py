@@ -13,6 +13,7 @@ from .agent_memory import forget_memory, load_memory, memory_context, memory_pat
 from .config_loader import load_config
 from .external_cli import list_external_tools, run_external_tool
 from .feedback_tracker import read_feedback_reports
+from .notifier import feishu_status, send_feishu_test
 from .providers.registry import resolve_llm_connection
 from .rag_client import rag_query, rag_search, rag_status
 from .search_engine import search_goldfish
@@ -115,6 +116,7 @@ class ToolRegistry:
         self.register(ToolSpec(name="rag_query", description="Ask the configured local RAG knowledge base and return an answer with source chunks.", mutating=False, handler=_tool_rag_query, timeout_seconds=45))
         self.register(ToolSpec(name="rag_search", description="Search the configured local RAG knowledge base for matching source chunks.", mutating=False, handler=_tool_rag_search, timeout_seconds=45))
         self.register(ToolSpec(name="rag_status", description="Check local RAG service health, stats, and configuration.", mutating=False, handler=_tool_rag_status, timeout_seconds=20))
+        self.register(ToolSpec(name="knowledge_lookup", description="Search local RAG first, then public web, and return two non-merged result blocks.", mutating=False, handler=_tool_knowledge_lookup, timeout_seconds=90))
         self.register(
             ToolSpec(
                 name="web_search",
@@ -128,6 +130,8 @@ class ToolRegistry:
         self.register(ToolSpec(name="skills", description="List or show lightweight goldfish skills.", mutating=False, handler=_tool_skills, timeout_seconds=10))
         self.register(ToolSpec(name="external_cli", description="List or run allow-listed external CLI tools.", mutating=True, handler=_tool_external_cli, timeout_seconds=60))
         self.register(ToolSpec(name="source_health", description="Show failing and high-value sources.", mutating=False, handler=_tool_source_health, timeout_seconds=30))
+        self.register(ToolSpec(name="notify_status", description="Show configured notification channels and Feishu webhook status.", mutating=False, handler=_tool_notify_status, timeout_seconds=10))
+        self.register(ToolSpec(name="notify_test", description="Send a test notification through the configured channel.", mutating=True, handler=_tool_notify_test, timeout_seconds=30))
         self.register(
             ToolSpec(
                 name="agent",
@@ -273,6 +277,66 @@ def _tool_rag_status(_: Dict[str, Any]) -> Dict[str, Any]:
     return rag_status()
 
 
+def _tool_knowledge_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(payload.get("query") or payload.get("question") or "").strip()
+    if not query:
+        return {"status": "error", "mode": "knowledge_lookup", "query": query, "error": "query is required", "error_type": "empty_query", "rag": {}, "web": {}}
+
+    top_k = payload.get("top_k") or payload.get("rag_top_k") or payload.get("limit")
+    web_limit = int(payload.get("web_limit", payload.get("limit", 5)) or 5)
+    timeout = int(payload.get("timeout", 12) or 12)
+    provider = payload.get("search_provider") or payload.get("provider")
+    if not provider and _looks_time_sensitive_query(query):
+        provider = "news"
+
+    rag_result = rag_search(
+        query,
+        top_k=top_k,
+        retrieval_mode=payload.get("retrieval_mode"),
+        category=str(payload.get("category") or "all"),
+    )
+    try:
+        web_results = search_public_web(query, limit=web_limit, timeout=timeout, provider=provider, timespan=payload.get("timespan"))
+        web_result = {
+            "status": "ok",
+            "mode": "search",
+            "query": query,
+            "provider": web_results[0].get("source", "") if web_results else "",
+            "provider_order": web_results[0].get("provider_order", "") if web_results else "",
+            "count": len(web_results),
+            "results": web_results,
+            "safety": _public_web_safety(),
+        }
+    except Exception as exc:
+        web_result = {
+            "status": "error",
+            "mode": "search",
+            "query": query,
+            "error": str(exc),
+            "error_type": "web_search_failed",
+            "count": 0,
+            "results": [],
+            "safety": _public_web_safety(),
+        }
+
+    return {
+        "status": "ok" if rag_result.get("status") == "ok" or web_result.get("status") == "ok" else "error",
+        "mode": "knowledge_lookup",
+        "query": query,
+        "strategy": ["rag_search", "web_search"],
+        "conflict_policy": "RAG and web results are returned in separate blocks. Web results supplement but do not overwrite local RAG findings.",
+        "rag": rag_result,
+        "web": web_result,
+        "safety": {
+            "rag_first": True,
+            "separate_blocks": True,
+            "merged_claims": False,
+            "api_keys_sent_to_rag": False,
+            "public_web_only": True,
+        },
+    }
+
+
 def _tool_web_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     query = str(payload.get("query", "") or "").strip()
     if not query:
@@ -383,6 +447,24 @@ def _tool_source_health(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _tool_notify_status(_: Dict[str, Any]) -> Dict[str, Any]:
+    config = load_config()
+    return {
+        "status": "ok",
+        "notifications_enabled": bool(config.settings.get("enable_notifications", False)),
+        "feishu": feishu_status(config.settings),
+    }
+
+
+def _tool_notify_test(payload: Dict[str, Any]) -> Dict[str, Any]:
+    channel = str(payload.get("channel") or "feishu").strip().lower()
+    if channel != "feishu":
+        return {"status": "error", "error": f"unsupported notification channel: {channel}"}
+    config = load_config()
+    result = send_feishu_test(config.settings)
+    return {"status": "ok" if result.get("sent") else "error", "channel": channel, "result": result}
+
+
 def _tool_agent_loop(payload: Dict[str, Any]) -> Dict[str, Any]:
     goal = str(payload.get("goal") or payload.get("query") or "").strip()
     if not goal:
@@ -454,6 +536,9 @@ def _tool_doctor(_: Dict[str, Any]) -> Dict[str, Any]:
         },
         "search_providers": _search_provider_status(),
         "rag": rag_status(),
+        "notifications": {
+            "feishu": feishu_status(settings),
+        },
         "provider": connection["provider"],
         "model": connection["model"],
         "base_url": connection["base_url"] or "default",
